@@ -1,4 +1,5 @@
 import math
+from torch.hub import load_state_dict_from_url
 
 from models.registry import register_model
 import models.common as common
@@ -6,7 +7,7 @@ import models.vr.model as vrm
 
 
 @register_model
-def vr_small(lmb_range=[16,1024], lmb_embed_dim=(256, 256), sin_period=64):
+def vr_small(lmb_range=[16,1024], lmb_embed_dim=(256, 256), sin_period=64, pretrained=False):
     """ variable rate model
 
     Args:
@@ -64,4 +65,8 @@ def vr_small(lmb_range=[16,1024], lmb_embed_dim=(256, 256), sin_period=64):
     cfg['log_images'] = ['collie64.png', 'gun128.png', 'motor256.png']
 
     model = vrm.VariableRateLossyVAE(cfg)
+    if pretrained:
+        url = 'https://huggingface.co/duanzh0/my-model-weights/resolve/main/tpc_lm3pz_enc-coco-last.pt'
+        msd = load_state_dict_from_url(url)['model']
+        model.load_state_dict(msd)
     return model

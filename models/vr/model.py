@@ -24,7 +24,6 @@ MAX_LMB = 8192
 # LOG_LMB_SCALE = EMBED_MAX_PERIOD / math.log(MAX_LMB)
 
 
-# def sinusoidal_embedding(values: torch.Tensor, dim=256, max_period=EMBED_MAX_PERIOD):
 def sinusoidal_embedding(values: torch.Tensor, dim=256, max_period=128):
     assert values.dim() == 1 and (dim % 2) == 0
     exponents = torch.linspace(0, 1, steps=(dim // 2))
@@ -247,7 +246,6 @@ class VRLatentBlock3Pos(nn.Module):
             z_sample, probs = self.discrete_gaussian(qm, scales=pv, means=pm)
             kl = -1.0 * torch.log(probs)
         # add the new information to feature
-        # feature = feature + self.z_proj(z_sample)
         feature = self.fuse_feature_and_z(feature, z_sample, lmb_embedding)
         feature = self.transform_end(feature, lmb_embedding)
         if get_latents:
@@ -262,17 +260,11 @@ class VRLatentBlock3Pos(nn.Module):
         else: # if `latent` is provided, directly use it.
             assert pm.shape == latent.shape
             z_sample = latent
-        # feature = feature + self.z_proj(z)
         feature = self.fuse_feature_and_z(feature, z_sample, lmb_embedding)
         feature = self.transform_end(feature, lmb_embedding)
         return feature
 
     def update(self):
-        # min_scale = 0.11
-        # max_scale = 20
-        # log_scales = torch.linspace(math.log(min_scale), math.log(max_scale), steps=64)
-        # scale_table = torch.exp(log_scales)
-        # updated = self.discrete_gaussian.update_scale_table(scale_table)
         self.discrete_gaussian.update()
 
     def compress(self, feature, enc_feature, lmb_embedding):
@@ -285,7 +277,6 @@ class VRLatentBlock3Pos(nn.Module):
         zhat = self.discrete_gaussian.quantize(qm, mode='dequantize', means=pm)
         # add the new information to feature
         feature = self.fuse_feature_and_z(feature, zhat, lmb_embedding)
-        # feature = feature + self.z_proj(zhat)
         feature = self.transform_end(feature, lmb_embedding)
         return feature, strings
 
@@ -296,25 +287,8 @@ class VRLatentBlock3Pos(nn.Module):
         zhat = self.discrete_gaussian.decompress(strings, indexes, means=pm)
         # add the new information to feature
         feature = self.fuse_feature_and_z(feature, zhat, lmb_embedding)
-        # feature = feature + self.z_proj(zhat)
         feature = self.transform_end(feature, lmb_embedding)
         return feature
-
-
-class BiasWithEmbedding(nn.Module):
-    def __init__(self, feature_dim, embed_dim):
-        super().__init__()
-        self.in_channels = feature_dim
-        self.requires_embedding = True
-        self.embedding_layer = nn.Sequential(
-            nn.GELU(),
-            nn.Linear(embed_dim, feature_dim),
-            nn.Unflatten(1, unflattened_size=(feature_dim, 1, 1))
-        )
-
-    def forward(self, feature, emb):
-        bias = self.embedding_layer(emb)
-        return feature + bias
 
 
 class TopDownDecoder(nn.Module):
@@ -324,11 +298,6 @@ class TopDownDecoder(nn.Module):
 
         width = self.dec_blocks[0].in_channels
         self.bias = nn.Parameter(torch.zeros(1, width, 1, 1))
-        # self.register_buffer('bias', torch.zeros(1, width, 1, 1)) # a dummy bias
-        # self.bias: torch.Tensor
-        # self.initial_width = self.dec_blocks[0].in_channels
-        # self.register_buffer('_dummy', torch.zeros(1), persistent=False)
-        # self._dummy: torch.Tensor
 
     def get_bias(self, nhw_repeat=(1,1,1)):
         nB, nH, nW = nhw_repeat
@@ -787,31 +756,3 @@ class VariableRateLossyVAE(nn.Module):
             for k,v in results.items():
                 all_lmb_stats[k].append(v)
         return all_lmb_stats
-
-
-class VariableRateLossyVAEMLPembedding(VariableRateLossyVAE):
-    def __init__(self, config: dict):
-        super().__init__(config)
-        self.embedding_mlp = nn.Sequential(
-            nn.Linear(1, 1024),
-            nn.GELU(),
-            nn.Linear(1024, 1024),
-            nn.GELU(),
-            nn.Linear(1024, self.lmb_embed_dim[0]),
-        )
-
-    def _get_lmb_embedding(self, log_lmb, n=None):
-        if log_lmb is None: # use default log-lambda
-            log_lmb = self._default_log_lmb
-        if isinstance(log_lmb, (int, float)): # expand
-            assert n is not None, f'log_lmb={log_lmb}, n must be provided'
-            log_lmb = self.expand_log_lmb(log_lmb, n=n)
-        else: # tensor
-            assert n is None, f'log_lmb={log_lmb}, n should not be provided'
-            assert isinstance(log_lmb, torch.Tensor) and (log_lmb.dim() == 1)
-        # scaled = log_lmb * LOG_LMB_SCALE
-        scaled = log_lmb * self.LOG_LMB_SCALE
-        # embedding = sinusoidal_embedding(scaled, dim=self.lmb_embed_dim[0], max_period=self._sin_period)
-        embedding = self.embedding_mlp(torch.unsqueeze(scaled, dim=1))
-        embedding = self.lmb_embedding(embedding)
-        return embedding
