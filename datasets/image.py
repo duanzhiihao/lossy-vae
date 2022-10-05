@@ -9,7 +9,7 @@ import torchvision as tv
 import torchvision.transforms.functional as tvf
 from torch.utils.data import Dataset, DataLoader, DistributedSampler
 
-from mycv.paths import DATASETS_DIR, IMAGENET_DIR, COCO_DIR, IMPROC_DIR
+from .paths import DATASETS_DIR, IMAGENET_DIR, COCO_DIR, IMPROC_DIR
 
 
 class ImageDataset(Dataset):
