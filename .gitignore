@@ -1,4 +1,5 @@
 # scripts
+test.py
 _test*
 _*.sh
 # paths.py
