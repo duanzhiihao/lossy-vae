@@ -1,3 +1,25 @@
+# scripts
+_test*
+_*.sh
+# paths.py
+rec.yuv
+
+# folders
+runs/
+wandb/
+cache/
+*/weights/*.txt
+*/weights/*.zip
+*/weights/my-*/
+
+# weights
+*.pt
+*.pth
+*.th
+*.pth.tar
+*.pkl
+*.ckpt
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
