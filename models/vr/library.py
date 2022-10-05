@@ -68,5 +68,5 @@ def vr_small(lmb_range=[16,1024], lmb_embed_dim=(256, 256), sin_period=64, pretr
     if pretrained:
         url = 'https://huggingface.co/duanzh0/my-model-weights/resolve/main/tpc_lm3pz_enc-coco-last.pt'
         msd = load_state_dict_from_url(url)['model']
-        model.load_state_dict(msd)
+        model.load_state_dict(msd, strict=False)
     return model

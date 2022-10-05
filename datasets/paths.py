@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 # Project root dir
-MYCV_DIR = Path(__file__).parent
+PROJECT_DIR = Path(__file__).parent
 
 # The directory of all datasets
 DATASETS_DIR = Path('d:/datasets')
