@@ -2,7 +2,6 @@
 test.py
 _test*
 _*.sh
-paths.py
 rec.yuv
 
 # folders
