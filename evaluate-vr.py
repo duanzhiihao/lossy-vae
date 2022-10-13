@@ -5,8 +5,8 @@ import argparse
 import math
 import torch
 
-from models.registry import get_model
-from datasets.compression import imcoding_evaluate
+from lvae.models.registry import get_model
+from lvae.datasets.compression import imcoding_evaluate
 
 
 @torch.no_grad()
@@ -14,10 +14,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('-m', '--model',        type=str, default='vr_small')
     parser.add_argument('-a', '--model_args',   type=str, default='pretrained=True')
-    # parser.add_argument('-w', '--weights_path', type=str, default='runs/tpc_lm3pz_enc_0.pt')
     parser.add_argument('-n', '--dataset_name', type=str, default='kodak')
     # parser.add_argument('-n', '--dataset_name', type=str, default='clic2022-test')
-    # parser.add_argument('-a', '--bd_anchor',    type=str, default='vtm-12.1')
     parser.add_argument('-d', '--device',       type=str, default='cuda:0')
     args = parser.parse_args()
 

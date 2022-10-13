@@ -7,14 +7,7 @@ import torch
 import torchvision.transforms.functional as tvf
 from timm.utils import AverageMeter
 
-from .paths import IMPROC_DIR, DATASETS_DIR
-
-
-known_datasets = {
-    'kodak': IMPROC_DIR / 'kodak',
-    'clic2022-test': IMPROC_DIR / 'clic/test-2022',
-    'uvg-1080p': DATASETS_DIR / 'video/uvg/1080p-frames'
-}
+from lvae.paths import known_datasets
 
 
 @torch.no_grad()

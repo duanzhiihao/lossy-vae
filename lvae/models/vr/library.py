@@ -1,9 +1,9 @@
 import math
 from torch.hub import load_state_dict_from_url
 
-from models.registry import register_model
-import models.common as common
-import models.vr.model as vrm
+from lvae.models.registry import register_model
+import lvae.models.common as common
+import lvae.models.vr.model as vrm
 
 
 @register_model

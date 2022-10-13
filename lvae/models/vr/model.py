@@ -10,9 +10,9 @@ import torch.nn.functional as tnf
 import torchvision as tv
 import torchvision.transforms.functional as tvf
 
-from utils.coding import crop_divisible_by, pad_divisible_by
-import models.common as common
-import models.entropy_coding as entropy_coding
+from lvae.utils.coding import crop_divisible_by, pad_divisible_by
+import lvae.models.common as common
+import lvae.models.entropy_coding as entropy_coding
 
 
 MAX_LMB = 8192
