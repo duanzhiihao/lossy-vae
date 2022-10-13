@@ -1,5 +1,6 @@
 import os
 import time
+import logging
 import argparse
 from pathlib import Path
 from collections import defaultdict
@@ -10,6 +11,10 @@ import torch.cuda.amp as amp
 from torch.nn.parallel import DistributedDataParallel as DDP
 import torchvision as tv
 import wandb
+
+import timm.utils
+import lvae.utils as utils
+import lvae.utils.ddp as ddputils
 
 # import mycv.utils.loggers as mylog
 # import mycv.utils as utils
@@ -144,7 +149,7 @@ class BaseTrainWrapper():
 
         _dir_str = utils.ANSI.colorstr(str(log_dir), c='br_b', ul=True)
         _prefix = 'Resuming' if cfg.resume else 'Logging'
-        mylog.info(f'{_prefix} run at {_dir_str} \n')
+        logging.info(f'{_prefix} run at {_dir_str} \n')
 
         self.cfg.log_dir = str(log_dir)
         self._log_dir = log_dir
@@ -159,7 +164,7 @@ class BaseTrainWrapper():
 
         if world_size == 1: # standard single GPU mode
             assert (local_rank == -1) and self.is_main
-            mylog.info(f'Visible devices={_count}, using idx 0: {torch.cuda.get_device_properties(0)} \n')
+            logging.info(f'Visible devices={_count}, using idx 0: {torch.cuda.get_device_properties(0)} \n')
             local_rank = 0 # just for selecting device 0
             mylog.add_file_handler(fpath=self._log_dir / f'logs.txt')
         else: # DDP mode
@@ -185,20 +190,20 @@ class BaseTrainWrapper():
         cfg = self.cfg
 
         if cfg.fixseed: # fix random seeds for reproducibility
-            mytu.set_random_seeds(2 + self.local_rank)
+            timm.utils.random_seed(2 + self.local_rank)
         torch.backends.cudnn.benchmark = True
 
-        mylog.info(f'Batch size on each dataloader (ie, GPU) = {cfg.batch_size}')
-        mylog.info(f'Gradient accmulation: {cfg.accum_num} backwards() -> one step()')
+        logging.info(f'Batch size on each dataloader (ie, GPU) = {cfg.batch_size}')
+        logging.info(f'Gradient accmulation: {cfg.accum_num} backwards() -> one step()')
         bs_effective = cfg.batch_size * self.world_size * cfg.accum_num
         msg = f'Effective batch size = {bs_effective}, learning rate = {cfg.lr}, ' + \
               f'weight decay = {cfg.wdecay}'
-        mylog.log(mylog.HIGHLIGHT, msg)
+        logging.info(msg)
         lr_per_1024img = cfg.lr / bs_effective * 1024
-        mylog.info(f'Learning rate per 1024 images = {lr_per_1024img}')
+        logging.info(f'Learning rate per 1024 images = {lr_per_1024img}')
         wd_per_1024img = cfg.wdecay / bs_effective * 1024
-        mylog.info(f'Weight decay per 1024 images = {wd_per_1024img} \n')
-        mylog.info(f'Training config: \n{cfg} \n')
+        logging.info(f'Weight decay per 1024 images = {wd_per_1024img} \n')
+        logging.info(f'Training config: \n{cfg} \n')
 
         cfg.bs_effective = bs_effective
         cfg.world_size = self.world_size
@@ -214,11 +219,11 @@ class BaseTrainWrapper():
         _model_func = get_registerd_model(self.model_registry_group, cfg.model)
         kwargs = eval(f'dict({cfg.model_args})')
         model = _model_func(**kwargs)
-        model: torch.nn.Module
+        assert isinstance(model, torch.nn.Module)
 
-        cfg.num_param = mytu.num_params(model)
-        mylog.info(f'Using model name={cfg.model}, {type(model)}, args = {kwargs}')
-        mylog.info(f'Number of learnable parameters = {cfg.num_param/1e6} M \n')
+        cfg.num_param = sum([p.numel() for p in model.parameters() if p.requires_grad])
+        logging.info(f'Using model name={cfg.model}, {type(model)}, args = {kwargs}')
+        logging.info(f'Number of learnable parameters = {cfg.num_param/1e6} M \n')
         if self.is_main:
             utils.print_to_file(str(model), fpath=self._log_dir / 'model.txt', mode='w')
 
@@ -253,9 +258,9 @@ class BaseTrainWrapper():
             num_, lr_, wd_ = len(pg['params']), pg['lr'], pg['weight_decay']
             msg = f'num={num_:<4}, lr={lr_}, weight_decay={wd_}'
             pg_info['groups'].append(msg)
-            mylog.info(msg)
+            logging.info(msg)
         msg = ', '.join([f'[{k}: {len(pg)}]' for k, pg in pg_info.items()])
-        mylog.info(f'optimizer parameter groups: {msg} \n')
+        logging.info(f'optimizer parameter groups: {msg} \n')
         if self.is_main:
             utils.json_dump(pg_info, fpath=self._log_dir / 'optimizer.json')
 
@@ -312,19 +317,19 @@ class BaseTrainWrapper():
             self._cur_iter  = checkpoint['iter']
             self._cur_epoch = checkpoint['epoch']
             self._best_loss = results.get('loss', self._best_loss)
-            mylog.info(f'Loaded checkpoint from {ckpt_path}. results={results}, '
+            logging.info(f'Loaded checkpoint from {ckpt_path}. results={results}, '
                          f'Epoch={self._cur_epoch}, iterations={self._cur_iter} \n')
         elif cfg.weights is not None: # (partially or fully) initialize from pretrained weights
             checkpoint = torch.load(cfg.weights, map_location='cpu')
-            mytu.load_partial(self.model, checkpoint)
+            self.model.load_state_dict(checkpoint['model'], strict=False)
             if cfg.load_optim:
                 self.optimizer.load_state_dict(checkpoint['optimizer'])
                 self.scaler.load_state_dict(checkpoint['scaler'])
                 for param_group in self.optimizer.param_groups:
                     param_group['lr'] = cfg.lr
-            mylog.info(f'Loaded checkpoint from {cfg.weights}. optimizer={cfg.load_optim}. \n')
+            logging.info(f'Loaded checkpoint from {cfg.weights}. optimizer={cfg.load_optim}. \n')
         else:
-            mylog.info('No pre-trained weights provided. Will train from scratch. \n')
+            logging.info('No pre-trained weights provided. Will train from scratch. \n')
 
     def set_wandb_(self):
         cfg = self.cfg
@@ -362,7 +367,7 @@ class BaseTrainWrapper():
                 assert ckpt_path.is_file(), f'Cannot find EMA checkpoint: {ckpt_path}'
                 ema.module.load_state_dict(torch.load(ckpt_path, map_location='cpu')['model'])
                 msg = msg + f' Loaded EMA from {ckpt_path}.'
-            mylog.info(msg + '\n')
+            logging.info(msg + '\n')
         else:
             ema = None
 
@@ -383,12 +388,12 @@ class BaseTrainWrapper():
             for param_group in self.optimizer.param_groups:
                 param_group['lr'] *= 0.1
             _lr = param_group['lr']
-            mylog.warning(f'Large gradient norm = {grad_norm:3f}. Set lr={_lr} .')
+            logging.warning(f'Large gradient norm = {grad_norm:3f}. Set lr={_lr} .')
             if self.is_main and (grad_norm > self.cfg.grad_clip * 20):
-                checkpoint = {'model': mytu.de_parallel(self.model).state_dict()}
+                checkpoint = {'model': timm.utils.unwrap_model(self.model).state_dict()}
                 wpath = self._log_dir / 'bad.pt'
                 torch.save(checkpoint, wpath)
-                mylog.warning(f'Saved bad model to {wpath}. Please debug it.')
+                logging.warning(f'Saved bad model to {wpath}. Please debug it.')
             bad = True
         else:
             bad = False
@@ -446,7 +451,7 @@ class BaseTrainWrapper():
         # model logging
         if self._cur_iter % self.model_log_interval == 0:
             self.model.eval()
-            _model = mytu.de_parallel(self.model)
+            _model = timm.utils.unwrap_model(self.model)
             if hasattr(_model, 'study'):
                 _model.study(save_dir=self._log_dir, wandb_run=self.wbrun)
             self.model.train()
@@ -483,7 +488,7 @@ class BaseTrainWrapper():
             'general/epoch': self._cur_epoch,
             'general/iter':  self._cur_iter
         }
-        model_ = mytu.de_parallel(self.model).eval()
+        model_ = timm.utils.unwrap_model(self.model).eval()
         results = self.eval_model(model_)
         mylog.log_dict_as_table(results)
         _log_dic.update({'val-metrics/plain_'+k: v for k,v in results.items()})
@@ -533,12 +538,12 @@ class BaseTrainWrapper():
             self._best_loss = cur_loss
             svpath = self._log_dir / 'best.pt'
             torch.save(checkpoint, svpath)
-            mylog.info(f'Get best loss = {cur_loss}. Saved to {svpath}.')
+            logging.info(f'Get best loss = {cur_loss}. Saved to {svpath}.')
 
     def clean_and_exit(self):
-        mylog.error(f'Terminating local rank {self.local_rank}...')
+        logging.error(f'Terminating local rank {self.local_rank}...')
         if self.is_main: # save failed checkpoint for debugging
-            checkpoint = {'model': mytu.de_parallel(self.model).state_dict()}
+            checkpoint = {'model': timm.utils.unwrap_model(self.model).state_dict()}
             torch.save(checkpoint, self._log_dir / 'failed.pt')
         if self.distributed:
             torch.distributed.barrier()
@@ -553,7 +558,7 @@ class IterTrainWrapper(BaseTrainWrapper):
         self._log_ema_weight = 5.0 / (self.cfg.log_itv + 8.0)
         _m = 1-self._log_ema_weight
         msg = f'train metrics avg weight={self._log_ema_weight:.4f}, momentum={_m:.4f} \n'
-        mylog.log(mylog.HIGHLIGHT, msg)
+        logging.info(msg)
 
     @torch.no_grad()
     def minibatch_log(self, pbar, stats):
