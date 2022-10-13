@@ -9,7 +9,7 @@ _root = Path('d:/datasets')
 
 known_datasets = {
     # Kodak: http://www.cs.albany.edu/~xypan/research/snr/Kodak.html
-    'kodak': _root / 'improcesing/kodak',
+    'kodak': _root / 'improcessing/kodak',
 
     # CLIC dataset: http://www.compression.cc
     'clic2022-test': _root / 'improcessing/clic/test-2022',
