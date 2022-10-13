@@ -6,7 +6,7 @@ import math
 import torch
 
 from lvae.models.registry import get_model
-from lvae.datasets.compression import imcoding_evaluate
+from lvae.evaluation import imcoding_evaluate
 
 
 @torch.no_grad()
