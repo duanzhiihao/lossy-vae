@@ -22,7 +22,7 @@ known_datasets = {
     'imagenet-val':   _root / 'imagenet/val',
 
     # Vimeo-90k dataset: http://toflow.csail.mit.edu/
-    'vimeo90k': _root / 'vimeo-90k',
+    'vimeo-90k': _root / 'vimeo-90k',
 
     # UVG dataset: http://ultravideo.fi/#testsequences
     'uvg-1080p': _root / 'video/uvg/1080p-frames'

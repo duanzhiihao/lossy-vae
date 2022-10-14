@@ -15,6 +15,7 @@ import wandb
 import timm.utils
 import lvae.utils as utils
 import lvae.utils.ddp as ddputils
+from lvae.models.registry import get_model
 
 # import mycv.utils.loggers as mylog
 # import mycv.utils as utils
@@ -27,17 +28,20 @@ class BaseTrainingWrapper():
     # override these values in the child class
     model_registry_group: str
     wandb_log_interval = 100
-    model_log_interval = wandb_log_interval
+    model_log_interval = 1000
     grad_norm_interval = 100
 
     def __init__(self) -> None:
-        # self._epoch_len: int
         self._cur_epoch = 0
         self._cur_iter  = 0
         self._best_loss = math.inf
         # miscellaneous
         self._moving_grad_norm_buffer = utils.MaxLengthList(max_len=self.grad_norm_interval)
         self.wandb_log_keys = set()
+
+        # progress bar logging
+        header = ['Epoch', 'Iter', 'GPU_mem', 'lr', 'grad']
+        self.stats_table = utils.SimpleTable(header)
 
         # pytorch DDP setting
         self.local_rank  = int(os.environ.get('LOCAL_RANK', -1))
@@ -51,8 +55,11 @@ class BaseTrainingWrapper():
         # set logging
         if self.is_main: # main process
             print()
+            fmt = '[%(asctime)s] [%(levelname)s] %(message)s'
+            logging.basicConfig(format=fmt, level=logging.INFO)
         else: # subprocess spawned by pytorch DDP
-            mylog.reset_ddp_setting()
+            fmt = f'[%(asctime)s RANK={self.local_rank}] [%(levelname)s] %(message)s'
+            logging.basicConfig(format=fmt, level=logging.WARNING)
 
         # set log directory
         log_parent = Path(f'runs/{cfg.wbproject}').resolve()
@@ -86,7 +93,6 @@ class BaseTrainingWrapper():
             assert (local_rank == -1) and self.is_main
             logging.info(f'Visible devices={_count}, using idx 0: {torch.cuda.get_device_properties(0)} \n')
             local_rank = 0 # just for selecting device 0
-            mylog.add_file_handler(fpath=self._log_dir / f'logs.txt')
         else: # DDP mode
             assert torch.distributed.is_nccl_available()
             torch.distributed.init_process_group(backend="nccl")
@@ -96,12 +102,10 @@ class BaseTrainingWrapper():
             # communicate log_dir
             log_dir = ddputils.broadcast_object(str(self._log_dir), src=0, local_rank=local_rank)
             self._log_dir = Path(log_dir)
-            mylog.add_file_handler(fpath=self._log_dir / f'logs_rank{local_rank}.txt')
 
             with ddputils.run_sequentially():
-                msg = f'local_rank={local_rank}, world_size={world_size}, total visible={_count}'
-                mylog.log(mylog.FORCE, msg)
-                mylog.log(mylog.FORCE, f'{torch.cuda.get_device_properties(local_rank)} \n')
+                print(f'local_rank={local_rank}, world_size={world_size}, total visible={_count}')
+                print(f'{torch.cuda.get_device_properties(local_rank)} \n')
             torch.distributed.barrier()
 
         self.device = torch.device('cuda', local_rank)
@@ -133,15 +137,14 @@ class BaseTrainingWrapper():
         msg = f'train metrics avg weight={self._log_ema_weight:.4f}, momentum={_m:.4f} \n'
         logging.info(msg)
 
-    def set_dataset_(self):
+    def set_dataset(self):
         self._epoch_len: int
 
-    def set_model_(self):
+    def set_model(self):
         cfg = self.cfg
 
         assert hasattr(self, 'model_registry_group')
-        from mycv.models.registry import get_registerd_model
-        _model_func = get_registerd_model(self.model_registry_group, cfg.model)
+        _model_func = get_model(self.model_registry_group, cfg.model)
         kwargs = eval(f'dict({cfg.model_args})')
         model = _model_func(**kwargs)
         assert isinstance(model, torch.nn.Module)
@@ -154,7 +157,7 @@ class BaseTrainingWrapper():
 
         self.model = model.to(self.device)
 
-    def set_optimizer_(self):
+    def set_optimizer(self):
         cfg, model = self.cfg, self.model
 
         # different optimization setting for different layers
@@ -203,7 +206,7 @@ class BaseTrainingWrapper():
         self.optimizer = optimizer
         self.scaler = amp.GradScaler(enabled=cfg.amp) # Automatic mixed precision
 
-    def adjust_lr_(self, t, T):
+    def adjust_lr(self, t, T):
         cfg = self.cfg
 
         # learning rate warm-up to prevent gradient exploding in early stages
@@ -212,14 +215,6 @@ class BaseTrainingWrapper():
             lrf = min(t + 1, T_warm) / T_warm
         elif cfg.lr_sched == 'constant':
             lrf = 1.0
-        elif cfg.lr_sched == 'cosine':
-            lrf = lr_schedulers.get_cosine_lrf(t-T_warm, cfg.lrf_min, T-T_warm-1)
-        elif cfg.lr_sched == 'const-0.75-cos':
-            boundary = round(T * 0.75)
-            if t <= boundary:
-                lrf = 1.0
-            else:
-                lrf = lr_schedulers.get_cosine_lrf(t-boundary, cfg.lrf_min, T-boundary-1)
         else:
             raise NotImplementedError(f'cfg.lr_sched = {cfg.lr_sched} not implemented')
 
@@ -256,7 +251,7 @@ class BaseTrainingWrapper():
         else:
             logging.info('No pre-trained weights provided. Will train from scratch. \n')
 
-    def set_wandb_(self):
+    def set_wandb(self):
         cfg = self.cfg
 
         # check if there is a previous run to resume
@@ -277,7 +272,7 @@ class BaseTrainingWrapper():
         self.wbrun = wbrun
         self.cfg = cfg
 
-    def set_ema_(self):
+    def set_ema(self):
         # Exponential moving averaging (EMA)
         # Important to create EMA model after cuda(), DP wrapper, and AMP but before DDP wrapper
         cfg = self.cfg
@@ -301,15 +296,11 @@ class BaseTrainingWrapper():
     def training_loops(self):
         raise NotImplementedError()
 
-    def gradient_clip_(self, parameters):
+    def gradient_clip(self, parameters):
         grad_norm = torch.nn.utils.clip_grad_norm_(parameters, self.cfg.grad_clip)
-        # grad_norm = mytu.get_grad_norm(parameters)
         self._moving_grad_norm_buffer.add(float(grad_norm))
         moving_median = self._moving_grad_norm_buffer.median()
-        # _clip = self.cfg.grad_clip
         if grad_norm > (moving_median * 10): # super large gradient
-            # _clip = min(moving_median, _clip) / 10
-            # mylog.warning(f'Large gradient norm = {grad_norm:3f}. Clipping to {_clip:.3f} ...')
             for param_group in self.optimizer.param_groups:
                 param_group['lr'] *= 0.1
             _lr = param_group['lr']
@@ -322,10 +313,9 @@ class BaseTrainingWrapper():
             bad = True
         else:
             bad = False
-        # mytu.clip_grad_norm_(parameters, max_norm=_clip, computed_norm=grad_norm)
         return grad_norm, bad
 
-    def init_logging_(self, print_header=True):
+    def init_logging(self, print_header=True):
         assert self.is_main
         print()
         # initialize stats table and progress bar
@@ -418,7 +408,7 @@ class BaseTrainingWrapper():
         }
         model_ = timm.utils.unwrap_model(self.model).eval()
         results = self.eval_model(model_)
-        mylog.log_dict_as_table(results)
+        utils.print_dict_as_table(results, use_logging=True)
         _log_dic.update({'val-metrics/plain_'+k: v for k,v in results.items()})
         # save last checkpoint
         checkpoint = {
@@ -436,7 +426,7 @@ class BaseTrainingWrapper():
         if self.cfg.ema:
             no_ema_loss = results['loss']
             results = self.eval_model(self.ema.module)
-            mylog.log_dict_as_table(results)
+            utils.print_dict_as_table(results, use_logging=True)
             _log_dic.update({f'val-metrics/ema_'+k: v for k,v in results.items()})
             # save last checkpoint of EMA
             checkpoint = {

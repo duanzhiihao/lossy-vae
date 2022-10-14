@@ -2,6 +2,8 @@ import os
 import re
 import json
 import random
+import logging
+import numpy as np
 from pathlib import Path
 from tempfile import gettempdir
 from collections import OrderedDict
@@ -9,8 +11,9 @@ from collections import OrderedDict
 __all__ = [
     'ANSI', 'query_yes_no', 'increment_dir', 'parse_config_str',
     'random_string', 'get_temp_file_path',
-    'read_file', 'json_load', 'json_dump', 'print_to_file',
-    'FunctionRegistry', 'SimpleConfig', 'SimpleTable', 'print_dict_as_table'
+    'read_file', 'json_load', 'json_dump', 'print_to_file'
+    'FunctionRegistry', 'SimpleConfig', 'SimpleTable', 'print_dict_as_table',
+    'MaxLengthList',
 ]
 
 
@@ -455,15 +458,48 @@ class SimpleTable(OrderedDict):
             return str(obj)
 
 
-def print_dict_as_table(dictionary: dict):
+def print_dict_as_table(dictionary: dict, use_logging=False):
     table = SimpleTable()
     keys = list(dictionary.keys())
     keys.sort()
     for k in keys:
         table[k] = dictionary[k]
     header, body = table.update()
-    print(header)
-    print(body)
+    if use_logging:
+        logging.info(header)
+        logging.info(body)
+    else:
+        print(header)
+        print(body)
+
+
+class MaxLengthList():
+    def __init__(self, max_len, dtype=np.float32):
+        self._list = np.empty(0, dtype=dtype)
+        self._max_len = int(max_len)
+        self._next_idx = int(0)
+
+    def add(self, v):
+        v = float(v)
+        _len = len(self._list)
+        if _len < self._max_len:
+            self._list = np.append(self._list, v)
+        else:
+            assert _len == self._max_len, f'invalid length={_len}, max_len={self._max_len}'
+            self._list[self._next_idx] = v
+            self._next_idx = (self._next_idx + 1) % self._max_len
+
+    def current(self) -> float:
+        if len(self._list) == 0:
+            print(f'Warning: the length of self._list={self._list} is 0')
+            return None
+        return self._list[self._next_idx - 1]
+
+    def median(self) -> float:
+        return np.median(self._list)
+
+    def max(self) -> float:
+        return np.max(self._list)
 
 
 if __name__ == '__main__':
