@@ -23,56 +23,7 @@ import lvae.utils.ddp as ddputils
 # import mycv.utils.lr_schedulers as lr_schedulers
 
 
-def default_parser():
-    # ====== set the run settings ======
-    parser = argparse.ArgumentParser()
-    # wandb setting
-    parser.add_argument('--wbproject',  type=str,  default='default')
-    parser.add_argument('--wbgroup',    type=str,  default=None)
-    parser.add_argument('--wbtags',     type=str,  default=None, nargs='+')
-    parser.add_argument('--wbnote',     type=str,  default=None)
-    parser.add_argument('--wbmode',     type=str,  default='disabled')
-    parser.add_argument('--name',       type=str,  default=None)
-    # model setting
-    parser.add_argument('--model',      type=str,  default='model-name')
-    parser.add_argument('--model_args', type=str,  default='')
-    # resume setting
-    parser.add_argument('--resume',     type=str,  default=None)
-    parser.add_argument('--weights',    type=str,  default=None)
-    parser.add_argument('--load_optim', action=argparse.BooleanOptionalAction, default=False)
-    # data setting
-    # parser.add_argument('--trainsets',  type=str,  default='imagenet64val')
-    # parser.add_argument('--transform',  type=str,  default=None)
-    # parser.add_argument('--valset',     type=str,  default='imagenet64val')
-    # parser.add_argument('--val_bs',     type=int,  default=None)
-    # optimization setting
-    parser.add_argument('--batch_size', type=int,  default=16)
-    parser.add_argument('--accum_num',  type=int,  default=1)
-    parser.add_argument('--optimizer',  type=str,  default='adam')
-    parser.add_argument('--lr',         type=float,default=1e-4)
-    parser.add_argument('--lr_sched',   type=str,  default='constant')
-    parser.add_argument('--lrf_min',    type=float,default=1e-2)
-    parser.add_argument('--lr_warmup',  type=int,  default=0)
-    parser.add_argument('--wdecay',     type=float,default=0.0)
-    parser.add_argument('--grad_clip',  type=float,default=200.0)
-    # parser.add_argument('--epochs',     type=int,  default=1000)
-    # parser.add_argument('--iterations', type=int,  default=1_000_000)
-    # automatic mixed precision (AMP)
-    parser.add_argument('--amp',        action=argparse.BooleanOptionalAction, default=False)
-    # exponential moving averaging (EMA)
-    parser.add_argument('--ema',        action=argparse.BooleanOptionalAction, default=True)
-    parser.add_argument('--ema_decay',  type=float,default=0.9999)
-    parser.add_argument('--ema_warmup', type=int,  default=None)
-    # logging setting
-    parser.add_argument('--eval_first', action=argparse.BooleanOptionalAction, default=True)
-    # parser.add_argument('--eval_per',   type=int,  default=1)
-    # device setting
-    parser.add_argument('--fixseed',    action=argparse.BooleanOptionalAction, default=False)
-    parser.add_argument('--workers',    type=int,  default=0)
-    return parser
-
-
-class BaseTrainWrapper():
+class BaseTrainingWrapper():
     # override these values in the child class
     model_registry_group: str
     wandb_log_interval = 100
@@ -93,37 +44,6 @@ class BaseTrainWrapper():
         self.world_size  = int(os.environ.get('WORLD_SIZE', 1))
         self.distributed = (self.world_size > 1)
         self.is_main     = self.local_rank in (-1, 0)
-
-    def main(self, cfg):
-        self.cfg = cfg
-
-        # preparation
-        self.set_logging()
-        self.set_device()
-        self.prepare_configs()
-        if self.distributed:
-            with ddputils.run_zero_first(): # training set
-                self.set_dataset_()
-            torch.distributed.barrier()
-        else:
-            self.set_dataset_()
-        self.set_model_()
-        self.set_optimizer_()
-        self.set_pretrain()
-
-        # logging
-        self.ema = None
-        if self.is_main:
-            self.set_wandb_()
-            self.set_ema_()
-            header = ['Epoch', 'Iter', 'GPU_mem', 'lr', 'grad']
-            self.stats_table = utils.SimpleTable(header)
-
-        if self.distributed: # DDP mode
-            self.model = DDP(self.model, device_ids=[self.local_rank], output_device=self.local_rank)
-
-        # the main training loops
-        self.training_loops()
 
     def set_logging(self):
         cfg = self.cfg
@@ -207,6 +127,11 @@ class BaseTrainWrapper():
 
         cfg.bs_effective = bs_effective
         cfg.world_size = self.world_size
+
+        self._log_ema_weight = 5.0 / (self.cfg.log_itv + 8.0)
+        _m = 1-self._log_ema_weight
+        msg = f'train metrics avg weight={self._log_ema_weight:.4f}, momentum={_m:.4f} \n'
+        logging.info(msg)
 
     def set_dataset_(self):
         self._epoch_len: int
@@ -412,15 +337,14 @@ class BaseTrainWrapper():
         time.sleep(0.1)
 
     @torch.no_grad()
-    def minibatch_log(self, pbar, epoch, bi, grad_norm, stats):
+    def minibatch_log(self, pbar, stats):
         assert self.is_main, f'is_main={self.is_main}, local_rank={self.local_rank}'
         cfg = self.cfg
 
-        n = len(str(cfg.epochs-1))
-        self.stats_table['Epoch'] = f'{epoch:>{n}}/{cfg.epochs-1}'
-        global_step = self._epoch_len * epoch + bi
+        epoch = float(self._cur_iter / self._epoch_len)
+        self.stats_table['Epoch'] = f'{epoch:.1f}/{cfg.epochs:.1f}'
         n = len(str(cfg.iterations))
-        self.stats_table['Iter']  = f'{global_step:>{n}}/{cfg.iterations}'
+        self.stats_table['Iter'] = f'{self._cur_iter:>{n}}/{cfg.iterations-1}'
 
         mem = torch.cuda.max_memory_allocated(self.device) / 1e9
         torch.cuda.reset_peak_memory_stats()
@@ -429,15 +353,19 @@ class BaseTrainWrapper():
         cur_lr = self.optimizer.param_groups[0]['lr']
         self.stats_table['lr'] = cur_lr
 
-        self._moving_max_grad_norm = max(self._moving_max_grad_norm, grad_norm)
-        self.stats_table['grad'] = grad_norm
+        self.stats_table['grad'] = self._moving_grad_norm_buffer.current()
 
         for k,v in stats.items():
             if isinstance(v, torch.Tensor) and v.numel() == 1:
                 v = float(v.detach().cpu().item())
             assert isinstance(v, (float, int))
             prev = self.stats_table.get(k, 0.0)
-            self.stats_table[k] = (prev * bi + v) / (bi + 1)
+            if prev == 0.0:
+                new = v
+            else: # exponential moving average
+                assert self.wandb_log_interval >= 2
+                new = (1 - self._log_ema_weight) * prev + self._log_ema_weight * v
+            self.stats_table[k] = new
             self.wandb_log_keys.add(k)
 
         pbar_header, pbar_body = self.stats_table.update(border=True)
@@ -550,50 +478,3 @@ class BaseTrainWrapper():
             torch.distributed.destroy_process_group()
             time.sleep(0.2 * self.local_rank)
         exit(utils.ANSI.sccstr(f'Local rank {self.local_rank} safely terminated.'))
-
-
-class IterTrainWrapper(BaseTrainWrapper):
-    def prepare_configs(self):
-        super().prepare_configs()
-        self._log_ema_weight = 5.0 / (self.cfg.log_itv + 8.0)
-        _m = 1-self._log_ema_weight
-        msg = f'train metrics avg weight={self._log_ema_weight:.4f}, momentum={_m:.4f} \n'
-        logging.info(msg)
-
-    @torch.no_grad()
-    def minibatch_log(self, pbar, stats):
-        assert self.is_main, f'is_main={self.is_main}, local_rank={self.local_rank}'
-        cfg = self.cfg
-
-        epoch = float(self._cur_iter / self._epoch_len)
-        self.stats_table['Epoch'] = f'{epoch:.1f}/{cfg.epochs:.1f}'
-        n = len(str(cfg.iterations))
-        self.stats_table['Iter'] = f'{self._cur_iter:>{n}}/{cfg.iterations-1}'
-
-        mem = torch.cuda.max_memory_allocated(self.device) / 1e9
-        torch.cuda.reset_peak_memory_stats()
-        self.stats_table['GPU_mem'] = f'{mem:.3g}G'
-
-        cur_lr = self.optimizer.param_groups[0]['lr']
-        self.stats_table['lr'] = cur_lr
-
-        self.stats_table['grad'] = self._moving_grad_norm_buffer.current()
-
-        for k,v in stats.items():
-            if isinstance(v, torch.Tensor) and v.numel() == 1:
-                v = float(v.detach().cpu().item())
-            assert isinstance(v, (float, int))
-            prev = self.stats_table.get(k, 0.0)
-            if prev == 0.0:
-                new = v
-            else: # exponential moving average
-                assert self.wandb_log_interval >= 2
-                new = (1 - self._log_ema_weight) * prev + self._log_ema_weight * v
-            self.stats_table[k] = new
-            self.wandb_log_keys.add(k)
-
-        pbar_header, pbar_body = self.stats_table.update(border=True)
-        if pbar_header != self._pbar_header: # update the progress bar header
-            print(pbar_header)
-            self._pbar_header = pbar_header
-        pbar.set_description(pbar_body)
