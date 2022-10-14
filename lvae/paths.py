@@ -8,7 +8,7 @@ from pathlib import Path
 _root = Path('d:/datasets')
 
 known_datasets = {
-    # Kodak: http://www.cs.albany.edu/~xypan/research/snr/Kodak.html
+    # Kodak images: http://www.cs.albany.edu/~xypan/research/snr/Kodak.html
     'kodak': _root / 'improcessing/kodak',
 
     # CLIC dataset: http://www.compression.cc
@@ -20,4 +20,10 @@ known_datasets = {
     # ImageNet dataset: http://www.image-net.org
     'imagenet-train': _root / 'imagenet/train',
     'imagenet-val':   _root / 'imagenet/val',
+
+    # Vimeo-90k dataset: http://toflow.csail.mit.edu/
+    'vimeo90k': _root / 'vimeo-90k',
+
+    # UVG dataset: http://ultravideo.fi/#testsequences
+    'uvg-1080p': _root / 'video/uvg/1080p-frames'
 }
