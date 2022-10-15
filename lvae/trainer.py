@@ -1,20 +1,17 @@
+from pathlib import Path
+from collections import defaultdict
 import os
 import time
 import logging
-import argparse
-from pathlib import Path
-from collections import defaultdict
 import math
 import torch
 import torch.distributed
 import torch.cuda.amp as amp
-from torch.nn.parallel import DistributedDataParallel as DDP
 import torchvision as tv
 import wandb
+from timm.utils import ModelEmaV2, unwrap_model, random_seed
 
-import timm.utils
 import lvae.utils as utils
-import lvae.utils.ddp as ddputils
 from lvae.models.registry import get_model
 
 
@@ -48,8 +45,8 @@ class BaseTrainingWrapper():
         # set logging
         if self.is_main: # main process
             print()
-            fmt = '[%(asctime)s] [%(levelname)s] %(message)s'
-            logging.basicConfig(format=fmt, level=logging.INFO)
+            handler = utils.my_stream_handler()
+            logging.basicConfig(handlers=[handler], level=logging.INFO)
         else: # subprocess spawned by pytorch DDP
             fmt = f'[%(asctime)s RANK={self.local_rank}] [%(levelname)s] %(message)s'
             logging.basicConfig(format=fmt, level=logging.WARNING)
@@ -92,13 +89,9 @@ class BaseTrainingWrapper():
             assert local_rank == torch.distributed.get_rank()
             assert world_size == torch.distributed.get_world_size()
 
-            # communicate log_dir
-            log_dir = ddputils.broadcast_object(str(self._log_dir), src=0, local_rank=local_rank)
-            self._log_dir = Path(log_dir)
-
-            with ddputils.run_sequentially():
-                print(f'local_rank={local_rank}, world_size={world_size}, total visible={_count}')
-                print(f'{torch.cuda.get_device_properties(local_rank)} \n')
+            time.sleep(0.1 * local_rank)
+            print(f'local_rank={local_rank}, world_size={world_size}, total visible={_count}')
+            print(f'{torch.cuda.get_device_properties(local_rank)} \n')
             torch.distributed.barrier()
 
         self.device = torch.device('cuda', local_rank)
@@ -107,7 +100,7 @@ class BaseTrainingWrapper():
         cfg = self.cfg
 
         if cfg.fixseed: # fix random seeds for reproducibility
-            timm.utils.random_seed(2 + self.local_rank)
+            random_seed(2 + self.local_rank)
         torch.backends.cudnn.benchmark = True
 
         logging.info(f'Batch size on each dataloader (ie, GPU) = {cfg.batch_size}')
@@ -269,7 +262,6 @@ class BaseTrainingWrapper():
         cfg = self.cfg
 
         if cfg.ema:
-            from timm.utils.model_ema import ModelEmaV2 # lazy import
             ema = ModelEmaV2(self.model, decay=cfg.ema_decay)
 
             msg = f'Using EMA with decay={cfg.ema_decay}.'
@@ -296,25 +288,18 @@ class BaseTrainingWrapper():
                 param_group['lr'] *= 0.1
             _lr = param_group['lr']
             logging.warning(f'Large gradient norm = {grad_norm:3f}. Set lr={_lr} .')
-            if self.is_main and (grad_norm > self.cfg.grad_clip * 20):
-                checkpoint = {'model': timm.utils.unwrap_model(self.model).state_dict()}
-                wpath = self._log_dir / 'bad.pt'
-                torch.save(checkpoint, wpath)
-                logging.warning(f'Saved bad model to {wpath}. Please debug it.')
             bad = True
         else:
             bad = False
         return grad_norm, bad
 
-    def init_logging(self, print_header=True):
+    def init_progress_table(self):
         assert self.is_main
         print()
         # initialize stats table and progress bar
         for k in self.stats_table.keys():
             self.stats_table[k] = 0.0
         self._pbar_header = self.stats_table.get_header(border=True)
-        if print_header:
-            print(self._pbar_header)
         time.sleep(0.1)
 
     @torch.no_grad()
@@ -350,7 +335,7 @@ class BaseTrainingWrapper():
             self.wandb_log_keys.add(k)
 
         pbar_header, pbar_body = self.stats_table.update(border=True)
-        if pbar_header != self._pbar_header: # update the progress bar header
+        if len(pbar_header) != len(self._pbar_header): # update the progress bar header
             print(pbar_header)
             self._pbar_header = pbar_header
         pbar.set_description(pbar_body)
@@ -360,7 +345,7 @@ class BaseTrainingWrapper():
         # model logging
         if self._cur_iter % self.model_log_interval == 0:
             self.model.eval()
-            _model = timm.utils.unwrap_model(self.model)
+            _model = unwrap_model(self.model)
             if hasattr(_model, 'study'):
                 _model.study(save_dir=self._log_dir, wandb_run=self.wbrun)
             self.model.train()
@@ -397,7 +382,7 @@ class BaseTrainingWrapper():
             'general/epoch': self._cur_epoch,
             'general/iter':  self._cur_iter
         }
-        model_ = timm.utils.unwrap_model(self.model).eval()
+        model_ = unwrap_model(self.model).eval()
         results = self.eval_model(model_)
         utils.print_dict_as_table(results)
         _log_dic.update({'val-metrics/plain_'+k: v for k,v in results.items()})
@@ -452,7 +437,7 @@ class BaseTrainingWrapper():
     def clean_and_exit(self):
         logging.error(f'Terminating local rank {self.local_rank}...')
         if self.is_main: # save failed checkpoint for debugging
-            checkpoint = {'model': timm.utils.unwrap_model(self.model).state_dict()}
+            checkpoint = {'model': unwrap_model(self.model).state_dict()}
             torch.save(checkpoint, self._log_dir / 'failed.pt')
         if self.distributed:
             torch.distributed.barrier()

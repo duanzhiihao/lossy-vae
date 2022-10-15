@@ -9,9 +9,9 @@ from tempfile import gettempdir
 from collections import OrderedDict
 
 __all__ = [
-    'ANSI', 'query_yes_no', 'increment_dir', 'parse_config_str',
-    'random_string', 'get_temp_file_path',
-    'read_file', 'json_load', 'json_dump', 'print_to_file',
+    'ANSI', 'my_stream_handler',
+    'query_yes_no', 'increment_dir', 'parse_config_str', 'random_string',
+    'get_temp_file_path', 'read_file', 'json_load', 'json_dump', 'print_to_file',
     'FunctionRegistry', 'SimpleConfig', 'SimpleTable', 'print_dict_as_table',
     'MaxLengthList',
 ]
@@ -196,6 +196,31 @@ def colorstr_example():
     ANSI.colorstr_example()
 
 
+class LevelFormatter(logging.Formatter):
+    _level_formats = {
+        logging.WARNING: ANSI.warningstr('[%(asctime)s] %(message)s'),
+        logging.ERROR:   ANSI.errorstr('[%(asctime)s] %(message)s'),
+    }
+
+    def format(self, record):
+        # adapted from https://stackoverflow.com/q/14844970
+        # Save the default format configured by the user
+        format_default = self._style._fmt
+        # Replace the original format with one customized by logging level
+        self._style._fmt = self._level_formats.get(record.levelno, format_default)
+        # Call the original format method
+        result = super().format(record)
+        # Restore the original format configured by the user
+        self._style._fmt = format_default
+        return result
+
+def my_stream_handler():
+    handler = logging.StreamHandler()
+    formatter = LevelFormatter(fmt='[%(asctime)s] %(message)s', datefmt='%Y-%b-%d %H:%M:%S')
+    handler.setFormatter(formatter)
+    return handler
+
+
 def query_yes_no(question):
     """ Ask a yes/no question via input() and return their answer. \\
     The return value is True for 'y' or 'yes', and False for 'n' or 'no'.
@@ -215,7 +240,7 @@ def query_yes_no(question):
 
 
 def increment_dir(dir_root='runs/', name='exp'):
-    """ Increament directory name. E.g., exp_1, exp_2, exp_3, ...
+    """ Get increamental directory name. E.g., exp_1, exp_2, exp_3, ...
 
     Args:
         dir_root (str, optional): root directory. Defaults to 'runs/'.
@@ -223,16 +248,6 @@ def increment_dir(dir_root='runs/', name='exp'):
     """
     assert isinstance(dir_root, (str, Path))
     dir_root = Path(dir_root)
-    # if not dir_root.is_dir():
-    #     print(f'{dir_root} does not exist. Creating it...')
-    #     dir_root.mkdir(parents=True)
-    # dnames = [s for s in os.listdir(dir_root) if s.startswith(name)]
-    # if len(dnames) > 0:
-    #     dnames = [s[len(name):] for s in dnames]
-    #     ids = [int(re.search(r'\d+', s).group()) for s in dnames] # left to right search
-    #     n = max(ids) + 1
-    # else:
-    #     n = 0
     n = 0
     while (dir_root / f'{name}_{n}').is_dir():
         n += 1

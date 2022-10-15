@@ -72,7 +72,9 @@ def make_generator(dataset, batch_size, workers):
 
 
 class TrainWrapper(BaseTrainingWrapper):
-    model_registry_group = 'video'
+    def __init__(self, cfg):
+        super().__init__()
+        self.main(cfg)
 
     def main(self, cfg):
         self.cfg = cfg
@@ -91,9 +93,6 @@ class TrainWrapper(BaseTrainingWrapper):
         if self.is_main:
             self.set_wandb()
             self.set_ema()
-
-        if self.distributed: # DDP mode
-            self.model = DDP(self.model, device_ids=[self.local_rank], output_device=self.local_rank)
 
         # the main training loops
         self.training_loops()
@@ -116,21 +115,6 @@ class TrainWrapper(BaseTrainingWrapper):
         logging.info(f'Number of training images = {len(trainset)}')
         logging.info(f'Training transform: \n{str(trainset.transform)}')
 
-        # if self.is_main: # test set
-        #     if False:
-        #         val_bs = cfg.val_bs or max(1, cfg.batch_size // 2)
-        #         valloader = get_dataloader(cfg.valset, transform_cfg=None,
-        #             batch_size=val_bs, workers=cfg.workers//2,
-        #             distributed=False, shuffle=False
-        #         )
-        #         mylog.info(f'Number of validation images = {len(valloader.dataset)}')
-        #         mylog.info(f'Val root: {valloader.dataset.root} \n')
-        #     else:
-        #         mylog.info(f'No validation for now \n')
-        #         valloader = None
-        # else:
-        #     valloader = None
-
         self._epoch_len  = len(trainset) / cfg.bs_effective
         self.trainloader = trainloader
         # self.valloader   = valloader
@@ -138,22 +122,20 @@ class TrainWrapper(BaseTrainingWrapper):
 
     def training_loops(self):
         cfg = self.cfg
+
+        if self.distributed: # DDP mode
+            self.model = DDP(self.model, device_ids=[self.local_rank], output_device=self.local_rank)
         model = self.model.train()
 
         # ======================== initialize logging ========================
         pbar = range(self._cur_iter, cfg.iterations)
         if self.is_main:
             pbar = tqdm(pbar)
-            self.init_logging(print_header=False)
+            self.init_progress_table()
         # ======================== start training ========================
         for step in pbar:
             self._cur_iter  = step
             self._cur_epoch = step / self._epoch_len
-
-            # DDP sanity check
-            # if self.distributed and (step % self.ddp_check_interval == 0):
-            #     # If DDP mode, synchronize model parameters on all gpus
-            #     check_model_equivalence(model, log_path=self._log_dir/'ddp.txt')
 
             # evaluation
             if self.is_main:
@@ -182,7 +164,7 @@ class TrainWrapper(BaseTrainingWrapper):
                 self.optimizer.step()
                 self.optimizer.zero_grad()
 
-                if (self.ema is not None) and not bad:
+                if (self.ema is not None) and (not bad):
                     _warmup = cfg.ema_warmup or (cfg.iterations // 20)
                     self.ema.decay = cfg.ema_decay * (1 - math.exp(-step / _warmup))
                     self.ema.update(model)
@@ -240,8 +222,7 @@ class TrainWrapper(BaseTrainingWrapper):
 
 def main():
     cfg = parse_args()
-    TrainWrapper().main(cfg)
-
+    TrainWrapper(cfg)
 
 if __name__ == '__main__':
     main()
