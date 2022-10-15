@@ -11,7 +11,7 @@ from collections import OrderedDict
 __all__ = [
     'ANSI', 'query_yes_no', 'increment_dir', 'parse_config_str',
     'random_string', 'get_temp_file_path',
-    'read_file', 'json_load', 'json_dump', 'print_to_file'
+    'read_file', 'json_load', 'json_dump', 'print_to_file',
     'FunctionRegistry', 'SimpleConfig', 'SimpleTable', 'print_dict_as_table',
     'MaxLengthList',
 ]
@@ -458,19 +458,15 @@ class SimpleTable(OrderedDict):
             return str(obj)
 
 
-def print_dict_as_table(dictionary: dict, use_logging=False):
+def print_dict_as_table(dictionary: dict):
     table = SimpleTable()
     keys = list(dictionary.keys())
     keys.sort()
     for k in keys:
         table[k] = dictionary[k]
     header, body = table.update()
-    if use_logging:
-        logging.info(header)
-        logging.info(body)
-    else:
-        print(header)
-        print(body)
+    print(header)
+    print(body)
 
 
 class MaxLengthList():

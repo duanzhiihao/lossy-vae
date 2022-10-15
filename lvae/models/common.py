@@ -1,3 +1,4 @@
+from collections import OrderedDict
 import math
 import torch
 import torch.nn as nn
@@ -106,3 +107,29 @@ class MyConvNeXtBlock(nn.Module):
         if self.residual:
             x = x + shortcut
         return x
+
+
+class BottomUpEncoder(nn.Module):
+    def __init__(self, blocks, dict_key='height'):
+        super().__init__()
+        self.enc_blocks = nn.ModuleList(blocks)
+        self.dict_key = dict_key
+
+    @torch.no_grad()
+    def _get_dict_key(self, feature, x=None):
+        if self.dict_key == 'height':
+            key = int(feature.shape[2])
+        elif self.dict_key == 'stride':
+            key = round(x.shape[2] / feature.shape[2])
+        else:
+            raise ValueError(f'Unknown key: self.dict_key={self.dict_key}')
+        return key
+
+    def forward(self, x):
+        feature = x
+        enc_features = OrderedDict()
+        for i, block in enumerate(self.enc_blocks):
+            feature = block(feature)
+            key = self._get_dict_key(feature, x)
+            enc_features[key] = feature
+        return enc_features

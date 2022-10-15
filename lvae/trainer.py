@@ -17,16 +17,9 @@ import lvae.utils as utils
 import lvae.utils.ddp as ddputils
 from lvae.models.registry import get_model
 
-# import mycv.utils.loggers as mylog
-# import mycv.utils as utils
-# import mycv.utils.ddp as ddputils
-# import mycv.utils.torch_utils as mytu
-# import mycv.utils.lr_schedulers as lr_schedulers
-
 
 class BaseTrainingWrapper():
     # override these values in the child class
-    model_registry_group: str
     wandb_log_interval = 100
     model_log_interval = 1000
     grad_norm_interval = 100
@@ -143,10 +136,8 @@ class BaseTrainingWrapper():
     def set_model(self):
         cfg = self.cfg
 
-        assert hasattr(self, 'model_registry_group')
-        _model_func = get_model(self.model_registry_group, cfg.model)
         kwargs = eval(f'dict({cfg.model_args})')
-        model = _model_func(**kwargs)
+        model = get_model(cfg.model, **kwargs)
         assert isinstance(model, torch.nn.Module)
 
         cfg.num_param = sum([p.numel() for p in model.parameters() if p.requires_grad])
@@ -408,7 +399,7 @@ class BaseTrainingWrapper():
         }
         model_ = timm.utils.unwrap_model(self.model).eval()
         results = self.eval_model(model_)
-        utils.print_dict_as_table(results, use_logging=True)
+        utils.print_dict_as_table(results)
         _log_dic.update({'val-metrics/plain_'+k: v for k,v in results.items()})
         # save last checkpoint
         checkpoint = {
@@ -426,7 +417,7 @@ class BaseTrainingWrapper():
         if self.cfg.ema:
             no_ema_loss = results['loss']
             results = self.eval_model(self.ema.module)
-            utils.print_dict_as_table(results, use_logging=True)
+            utils.print_dict_as_table(results)
             _log_dic.update({f'val-metrics/ema_'+k: v for k,v in results.items()})
             # save last checkpoint of EMA
             checkpoint = {

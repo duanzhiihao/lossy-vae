@@ -3,15 +3,12 @@ import logging
 import argparse
 import math
 import torch
-import torch.cuda.amp as amp
 import torchvision as tv
+from torch.nn.parallel import DistributedDataParallel as DDP
+from timm.utils import unwrap_model
 
-# import mycv.utils.loggers as mylog
-# from mycv.training import IterTrainWrapper
-# # from mycv.utils.ddp import check_model_equivalence
-# from mycv.utils.torch_utils import de_parallel
-# from mycv.datasets.compression import Vimeo90k, video_fast_evaluate
 from lvae.trainer import BaseTrainingWrapper
+from lvae.datasets.video import Vimeo90k
 
 
 def parse_args():
@@ -51,7 +48,7 @@ def parse_args():
     parser.add_argument('--study_itv',  type=int,  default=1000)
     # parser.add_argument('--save_per',   type=int,  default=1000)
     parser.add_argument('--eval_itv',   type=int,  default=2000)
-    parser.add_argument('--eval_first', action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument('--eval_first', action=argparse.BooleanOptionalAction, default=False)
     # exponential moving averaging (EMA)
     parser.add_argument('--ema',        action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument('--ema_decay',  type=float,default=0.9999)
@@ -84,12 +81,7 @@ class TrainWrapper(BaseTrainingWrapper):
         self.set_logging()
         self.set_device()
         self.prepare_configs()
-        if self.distributed:
-            with ddputils.run_zero_first(): # training set
-                self.set_dataset()
-            torch.distributed.barrier()
-        else:
-            self.set_dataset()
+        self.set_dataset()
         self.set_model()
         self.set_optimizer()
         self.set_pretrain()
@@ -114,7 +106,7 @@ class TrainWrapper(BaseTrainingWrapper):
         self.model_log_interval = cfg.study_itv
         self.wandb_log_interval = cfg.log_itv
 
-    def set_dataset_(self):
+    def set_dataset(self):
         cfg = self.cfg
 
         logging.info('Initializing Datasets and Dataloaders...')
@@ -152,7 +144,7 @@ class TrainWrapper(BaseTrainingWrapper):
         pbar = range(self._cur_iter, cfg.iterations)
         if self.is_main:
             pbar = tqdm(pbar)
-            self.init_logging_(print_header=False)
+            self.init_logging(print_header=False)
         # ======================== start training ========================
         for step in pbar:
             self._cur_iter  = step
@@ -176,7 +168,7 @@ class TrainWrapper(BaseTrainingWrapper):
 
             # learning rate schedule
             if step % self.adjust_lr_interval == 0:
-                self.adjust_lr_(step, cfg.iterations)
+                self.adjust_lr(step, cfg.iterations)
 
             # training step
             assert model.training
@@ -186,7 +178,7 @@ class TrainWrapper(BaseTrainingWrapper):
             loss.backward() # gradients are averaged over devices in DDP mode
             # parameter update
             if step % cfg.accum_num == 0:
-                grad_norm, bad = self.gradient_clip_(model.parameters())
+                grad_norm, bad = self.gradient_clip(model.parameters())
                 self.optimizer.step()
                 self.optimizer.zero_grad()
 
@@ -215,7 +207,7 @@ class TrainWrapper(BaseTrainingWrapper):
         # model logging
         if self._cur_iter % self.model_log_interval == 0:
             self.model.eval()
-            model = de_parallel(self.model)
+            model = unwrap_model(self.model)
             if hasattr(model, 'study'):
                 model.study(log_dir=self._log_dir/'study', wandb_run=self.wbrun)
                 # self.ema.module.study(log_dir=self._log_dir/'ema')
