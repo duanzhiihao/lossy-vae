@@ -1,12 +1,8 @@
 from PIL import Image
 from tqdm import tqdm
 from pathlib import Path
-from collections import defaultdict
-import random
 import logging
-import torch
 import torchvision as tv
-import torchvision.transforms.functional as tvf
 from torch.utils.data import Dataset, DataLoader, DistributedSampler
 
 from lvae.paths import known_datasets
@@ -47,11 +43,17 @@ def coco_train2017(transform):
     return ImageDataset(root=known_datasets['coco-train2017'], transform=transform)
 
 @_datasets.register
-def kodak(transform):
-    return ImageDataset(root=known_datasets['kodak'], transform=transform)
+def vimeo90k(transform):
+    return ImageDataset(root=known_datasets['vimeo-90k'], transform=transform)
 
 
 def get_dateset(name: str, transform_cfg: str=None) -> Dataset:
+    """ get image dataset from name
+
+    Args:
+        name (str): dataset name, see functions above
+        transform_cfg (str, optional): config, example: 'crop=256,hflip=True'
+    """
     transform = []
     if transform_cfg is not None:
         transform_cfg = eval(f'dict({transform_cfg})')
@@ -66,22 +68,11 @@ def get_dateset(name: str, transform_cfg: str=None) -> Dataset:
     transform = tv.transforms.Compose(transform)
 
     dataset = _datasets[name](transform=transform)
+    assert isinstance(dataset, Dataset)
     return dataset
 
 
-def get_dataloader(dataset_names, transform_cfg, batch_size, workers,
-                   distributed=False, shuffle=True, drop_last=False):
-    dataset = get_dateset(dataset_names, transform_cfg)
-    sampler = DistributedSampler(dataset) if distributed else None
-    dataloader = DataLoader(
-        dataset, batch_size=batch_size, shuffle=(False if distributed else shuffle),
-        num_workers=workers, pin_memory=True, drop_last=drop_last, sampler=sampler
-    )
-    return dataloader
-
-
-def get_train_generator(dataset_names, transform_cfg, batch_size, workers):
-    dataset = get_dateset(dataset_names, transform_cfg)
+def make_generator(dataset, batch_size, workers):
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, drop_last=True,
                             num_workers=workers, pin_memory=True)
     while True:

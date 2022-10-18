@@ -11,7 +11,7 @@ from lvae.paths import known_datasets
 
 class Vimeo90k(torch.utils.data.Dataset):
     def __init__(self, n_frames=3):
-        self.root = known_datasets['vimeo-90k'] / 'sequences'
+        self.root = known_datasets['vimeo-90k']
         self.sequence_dirs = list(tqdm(itertools.chain(*[d.iterdir() for d in self.root.iterdir()])))
         self.sequence_dirs.sort()
 
