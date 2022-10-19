@@ -15,7 +15,7 @@ known_datasets = {
     'clic2022-test': _root / 'improcessing/clic/test-2022',
 
     # COCO dataset: http://cocodataset.org
-    'coco-train2017': _root / 'train2017',
+    'coco-train2017': _root / 'coco/train2017',
 
     # ImageNet dataset: http://www.image-net.org
     'imagenet-train': _root / 'imagenet/train',

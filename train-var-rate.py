@@ -9,15 +9,10 @@ import wandb
 from torch.nn.parallel import DistributedDataParallel as DDP
 from timm.utils import unwrap_model
 
-from lvae.utils import bd_rate
+from lvae.utils.coding import bd_rate
 from lvae.paths import known_datasets
 from lvae.trainer import BaseTrainingWrapper
 from lvae.datasets.image import get_dateset, make_generator
-
-# from mycv.training import IterTrainWrapper
-# from mycv.utils.ddp import check_model_equivalence
-# from mycv.datasets.compression import get_bd_rate_over_anchor
-# from mycv.datasets.imgen import get_dateset, datasets_root
 
 
 def parse_args():
@@ -31,14 +26,14 @@ def parse_args():
     parser.add_argument('--wbmode',     type=str,  default='disabled')
     parser.add_argument('--name',       type=str,  default=None)
     # model setting
-    parser.add_argument('--model',      type=str,  default='ch128n12_no4')
+    parser.add_argument('--model',      type=str,  default='vr_ch128n12_no4')
     parser.add_argument('--model_args', type=str,  default='')
     # resume setting
     parser.add_argument('--resume',     type=str,  default=None)
     parser.add_argument('--weights',    type=str,  default=None)
     parser.add_argument('--load_optim', action=argparse.BooleanOptionalAction, default=False)
     # data setting
-    parser.add_argument('--trainset',   type=str,  default='coco2017train')
+    parser.add_argument('--trainset',   type=str,  default='coco_train2017')
     parser.add_argument('--transform',  type=str,  default='crop=256,hflip=True')
     parser.add_argument('--valset',     type=str,  default='kodak')
     parser.add_argument('--val_steps',  type=int,  default=8)
@@ -48,7 +43,7 @@ def parse_args():
     parser.add_argument('--accum_num',  type=int,  default=1)
     parser.add_argument('--optimizer',  type=str,  default='adam')
     parser.add_argument('--lr',         type=float,default=2e-4)
-    parser.add_argument('--lr_sched',   type=str,  default='const-0.75-cos')
+    parser.add_argument('--lr_sched',   type=str,  default='constant')
     parser.add_argument('--lrf_min',    type=float,default=0.01)
     parser.add_argument('--lr_warmup',  type=int,  default=0)
     parser.add_argument('--grad_clip',  type=float,default=2.0)
@@ -75,6 +70,10 @@ def parse_args():
 
 class TrainWrapper(BaseTrainingWrapper):
     model_registry_group = 'generative'
+
+    def __init__(self, cfg):
+        super().__init__()
+        self.main(cfg)
 
     def main(self, cfg):
         self.cfg = cfg
@@ -104,7 +103,7 @@ class TrainWrapper(BaseTrainingWrapper):
         self.model_log_interval = cfg.study_itv
         self.wandb_log_interval = cfg.log_itv
 
-    def set_dataset_(self):
+    def set_dataset(self):
         cfg = self.cfg
 
         logging.info('Initializing Datasets and Dataloaders...')
@@ -132,7 +131,7 @@ class TrainWrapper(BaseTrainingWrapper):
         pbar = range(self._cur_iter, cfg.iterations)
         if self.is_main:
             pbar = tqdm(pbar)
-            self.init_logging_(print_header=False)
+            self.init_progress_table()
         # ======================== start training ========================
         for step in pbar:
             self._cur_iter  = step
@@ -151,7 +150,7 @@ class TrainWrapper(BaseTrainingWrapper):
 
             # learning rate schedule
             if step % 10 == 0:
-                self.adjust_lr_(step, cfg.iterations)
+                self.adjust_lr(step, cfg.iterations)
 
             # training step
             assert model.training
@@ -161,7 +160,7 @@ class TrainWrapper(BaseTrainingWrapper):
             loss.backward() # gradients are averaged over devices in DDP mode
             # parameter update
             if step % cfg.accum_num == 0:
-                grad_norm, bad = self.gradient_clip_(model.parameters())
+                grad_norm, bad = self.gradient_clip(model.parameters())
                 self.optimizer.step()
                 self.optimizer.zero_grad()
 
@@ -323,7 +322,7 @@ def print_json_like(dict_of_list):
 
 def main():
     cfg = parse_args()
-    TrainWrapper().main(cfg)
+    TrainWrapper(cfg)
 
 
 if __name__ == '__main__':
