@@ -11,9 +11,13 @@ import torchvision as tv
 import torchvision.transforms.functional as tvf
 from timm.utils import AverageMeter
 
-from mycv.utils.coding import get_object_size, crop_divisible_by, pad_divisible_by, bd_rate
-import mycv.models.vae.blocks as vaeblocks
-import mycv.models.probabilistic.entropy_coding as entropy_utils
+# from mycv.utils.coding import get_object_size, crop_divisible_by, pad_divisible_by, bd_rate
+# import mycv.models.vae.blocks as vaeblocks
+# import mycv.models.probabilistic.entropy_coding as entropy_utils
+
+from lvae.utils.coding import crop_divisible_by, pad_divisible_by
+import lvae.models.common as common
+import lvae.models.entropy_coding as entropy_coding
 
 
 MAX_LMB = 8192
@@ -97,8 +101,7 @@ class MyConvNeXtBlockAdaLN(nn.Module):
 class MyConvNeXtAdaLNPatchDown(MyConvNeXtBlockAdaLN):
     def __init__(self, in_ch, out_ch, down_rate=2, **kwargs):
         super().__init__(in_ch, **kwargs)
-        self.downsapmle = vaeblocks.get_conv(in_ch, out_ch, kernel_size=down_rate,
-                                             stride=down_rate, padding=0)
+        self.downsapmle = common.patch_downsample(in_ch, out_ch, rate=down_rate)
 
     def forward(self, x, emb):
         x = super().forward(x, emb)
@@ -135,12 +138,12 @@ class VRLatentBlock3Pos(nn.Module):
         self.posterior0 = MyConvNeXtBlockAdaLN(enc_width, embed_dim, kernel_size=kernel_size)
         self.posterior1 = MyConvNeXtBlockAdaLN(width,     embed_dim, kernel_size=kernel_size)
         self.posterior2 = MyConvNeXtBlockAdaLN(width,     embed_dim, kernel_size=kernel_size)
-        self.post_merge = vaeblocks.get_1x1(concat_ch, width)
-        self.posterior  = vaeblocks.get_3x3(width, zdim)
-        self.z_proj     = vaeblocks.get_1x1(zdim, width)
-        self.prior      = vaeblocks.get_1x1(width, zdim*2)
+        self.post_merge = common.conv_k1s1(concat_ch, width)
+        self.posterior  = common.conv_k3s1(width, zdim)
+        self.z_proj     = common.conv_k1s1(zdim, width)
+        self.prior      = common.conv_k1s1(width, zdim*2)
 
-        self.discrete_gaussian = entropy_utils.DiscretizedGaussian()
+        self.discrete_gaussian = entropy_coding.DiscretizedGaussian()
         self.is_latent_block = True
 
     def transform_prior(self, feature, lmb_embedding):
@@ -191,7 +194,7 @@ class VRLatentBlock3Pos(nn.Module):
             qm = self.transform_posterior(feature, enc_feature, lmb_embedding)
             if self.training: # if training, use additive uniform noise
                 z = qm + torch.empty_like(qm).uniform_(-0.5, 0.5)
-                log_prob = entropy_utils.gaussian_log_prob_mass(pm, pv, x=z, bin_size=1.0, prob_clamp=1e-6)
+                log_prob = entropy_coding.gaussian_log_prob_mass(pm, pv, x=z, bin_size=1.0, prob_clamp=1e-6)
                 kl = -1.0 * log_prob
             else: # if evaluation, use residual quantization
                 z, probs = self.discrete_gaussian(qm, scales=pv, means=pm)
