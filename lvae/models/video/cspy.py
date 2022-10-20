@@ -201,7 +201,6 @@ class VideoCodingModel(nn.Module):
         super().__init__()
 
         # ================================ i-frame model ================================
-        # from mycv.models.vae.qres.library import qres34m
         print('TODO: add qres-vae into this repo')
 
         i_lambda = lmb // 8
@@ -210,8 +209,7 @@ class VideoCodingModel(nn.Module):
         for p in self.i_model.parameters():
             p.requires_grad_(False)
         # load pre-trained parameters
-        # from mycv.paths import MYCV_DIR
-        wpath = MYCV_DIR / f'weights/qres34m/lmb{i_lambda}/last_ema.pt'
+        wpath = f'weights/qres34m/lmb{i_lambda}/last_ema.pt'
         self.i_model.load_state_dict(torch.load(wpath)['model'])
 
         # ================================ p-frame model ================================
