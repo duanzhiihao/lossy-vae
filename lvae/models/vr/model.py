@@ -11,10 +11,6 @@ import torchvision as tv
 import torchvision.transforms.functional as tvf
 from timm.utils import AverageMeter
 
-# from mycv.utils.coding import get_object_size, crop_divisible_by, pad_divisible_by, bd_rate
-# import mycv.models.vae.blocks as vaeblocks
-# import mycv.models.probabilistic.entropy_coding as entropy_utils
-
 from lvae.utils.coding import crop_divisible_by, pad_divisible_by
 import lvae.models.common as common
 import lvae.models.entropy_coding as entropy_coding

@@ -201,14 +201,16 @@ class VideoCodingModel(nn.Module):
         super().__init__()
 
         # ================================ i-frame model ================================
-        from mycv.models.vae.qres.library import qres34m
+        # from mycv.models.vae.qres.library import qres34m
+        print('TODO: add qres-vae into this repo')
+
         i_lambda = lmb // 8
         self.i_model = qres34m(lmb=i_lambda)
         # # fix i-model parameters
         for p in self.i_model.parameters():
             p.requires_grad_(False)
         # load pre-trained parameters
-        from mycv.paths import MYCV_DIR
+        # from mycv.paths import MYCV_DIR
         wpath = MYCV_DIR / f'weights/qres34m/lmb{i_lambda}/last_ema.pt'
         self.i_model.load_state_dict(torch.load(wpath)['model'])
 
@@ -315,32 +317,3 @@ def save_images(log_dir: Path, fname, list_of_tensors):
 
 def read_image(impath):
     return tv.io.read_image(impath).float().div_(255.0).unsqueeze_(0)
-
-
-def main():
-    from mycv.datasets.compression import video_fast_evaluate
-    from mycv.datasets.imgen import simple_evaluate
-    device = torch.device('cuda:0')
-
-    model = cspy()
-
-    wpath = 'd:/projects/_logs/last_ema.pt'
-    msd = torch.load(wpath)['model']
-    model.load_state_dict(msd)
-
-    model = model.to(device=device)
-    model.eval()
-
-    if True: # True, False
-        model.study('runs/debug')
-        exit()
-
-    if True: # True, False
-        results = model.self_evaluate('uvg-1080p', max_frames=12, log_dir='runs/debug')
-        print(results)
-
-    debug = 1
-
-
-if __name__ == '__main__':
-    main()
