@@ -1,3 +1,4 @@
+from pathlib import Path
 from collections import defaultdict
 import json
 import argparse
@@ -31,9 +32,12 @@ def main():
     log_lambdas = torch.log(lambdas)
     # log_lambdas = torch.linspace(math.log(start), math.log(end), steps=12).tolist()
 
-    save_json_path = f'runs/results/{args.dataset_name}-{args.model}.json'
-    all_lmb_stats = defaultdict(list)
+    save_json_path = Path(f'runs/results/{args.dataset_name}-{args.model}.json')
+    if not save_json_path.parent.is_dir():
+        print(f'Creating {save_json_path.parent} ...')
+        save_json_path.parent.mkdir(parents=True)
 
+    all_lmb_stats = defaultdict(list)
     for log_lmb in log_lambdas:
         model._default_log_lmb = log_lmb
         results = imcoding_evaluate(model, args.dataset_name)
