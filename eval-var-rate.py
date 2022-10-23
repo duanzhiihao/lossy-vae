@@ -12,11 +12,12 @@ from lvae.evaluation.image import imcoding_evaluate
 @torch.no_grad()
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('-m', '--model',        type=str, default='vr_ch128n12_no4')
-    parser.add_argument('-a', '--model_args',   type=str, default='pretrained=True')
-    parser.add_argument('-s', '--steps',        type=int, default=12)
-    parser.add_argument('-n', '--dataset_name', type=str, default='kodak')
-    parser.add_argument('-d', '--device',       type=str, default='cuda:0')
+    parser.add_argument('-m', '--model',        type=str,   default='vr_ch128n12_no4')
+    parser.add_argument('-a', '--model_args',   type=str,   default='pretrained=True')
+    parser.add_argument('-l', '--lmb_range',    type=float, default=[16, 1024], nargs='+')
+    parser.add_argument('-s', '--steps',        type=int,   default=12)
+    parser.add_argument('-n', '--dataset_name', type=str,   default='kodak')
+    parser.add_argument('-d', '--device',       type=str,   default='cuda:0')
     args = parser.parse_args()
 
     kwargs = eval(f'dict({args.model_args})')
@@ -26,7 +27,7 @@ def main():
     model.eval()
     model.compress_mode()
 
-    start, end = (16, 1024)
+    start, end = args.lmb_range
     p = 3.0
     lambdas = torch.linspace(math.pow(start,1/p), math.pow(end,1/p), steps=args.steps).pow(3)
     log_lambdas = torch.log(lambdas)
