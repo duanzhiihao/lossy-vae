@@ -9,7 +9,6 @@ import argparse
 import random
 import numpy as np
 import cv2
-from timm.utils import AverageMeter
 
 import vvc
 
@@ -97,27 +96,59 @@ def main():
         dataset_root = Path(args.dataset_path)
     assert dataset_root.is_dir(), f'{dataset_root=} does not exist.'
     logging.info('================================')
-    logging.info(f'Data set name={args.dataset_name}, path={args.dataset_path}')
+    logging.info(f'Data set name={args.dataset_name}, data path={args.dataset_path}')
     logging.info('================================')
     # find all images
     image_paths = sorted(dataset_root.rglob('*.*'))
     logging.info(f'Found {len(image_paths)} images in {dataset_root}.')
     # results saving directory
-    results_save_dir = Path(f'results/{args.codec}-{args.dataset}')
-    results_save_dir.mkdir(parents=True, exist_ok=False)
-    logging.info(f'Will save results to {results_save_dir}...')
+    _results_root = Path(f'runs/evaluation')
+    all_quality_results_dir = _results_root / f'{args.codec}-{args.dataset}'
+    all_quality_results_dir.mkdir(parents=True, exist_ok=False)
+    final_result_path = _results_root / f'{args.codec}-{args.dataset}.json'
+    logging.info(f'Will save results to {all_quality_results_dir} and {final_result_path}')
 
     # set up multiprocessing
     pool = ThreadPool(processes=args.workers)
     mp_results = []
-
+    # run evaluation for all q, for all images
     for q in args.quality:
         for impath in image_paths:
             mp_results.append(
-                pool.apply_async(evaluate_one_image, args=(impath, q, results_save_dir/f'q{q}.json'))
+                pool.apply_async(evaluate_one_image, args=(impath, q, all_quality_results_dir/f'q{q}.json'))
             )
     pool.close()
     pool.join()
+
+    # average results over all images
+    all_file_paths = sorted(all_quality_results_dir.rglob('*.*'))
+    final_json_data = {
+        'name': args.codec,
+        'dataset_name': args.dataset_name,
+        'dataset_root': dataset_root,
+        'quality': list(args.quality),
+        'results': {
+            'bpp': [],
+            'psnr': []
+        }
+    }
+    for fp in all_file_paths:
+        with open(fp, mode='r') as f:
+            list_of_dicts = json.load(fp=f)
+        final_json_data['results']['bpp'].append(get_avg(list_of_dicts, 'bpp'))
+        final_json_data['results']['psnr'].append(get_avg(list_of_dicts, 'psnr'))
+    # save json data
+    with open(final_result_path, mode='w') as f:
+        json.dump(final_json_data, fp=f, indent=2)
+    logging.info('================================')
+    logging.info(green_str(f'Final results saved to {final_result_path}'))
+    logging.info('================================')
+
+
+def get_avg(list_of_dict, key):
+    all_values = [d[key] for d in list_of_dict]
+    avg = sum(all_values) / len(all_values)
+    return avg
 
 
 if __name__ == '__main__':
