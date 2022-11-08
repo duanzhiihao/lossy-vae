@@ -20,6 +20,12 @@ cache/
 *.pkl
 *.ckpt
 
+# codecs
+EncoderApp
+DecoderApp
+EncoderApp.exe
+DecoderApp.exe
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
