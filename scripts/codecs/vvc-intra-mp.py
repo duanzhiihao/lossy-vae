@@ -87,26 +87,27 @@ def main():
     )
 
     default_dataset_paths = {
-        'kodak':   'd:/datasets/kodak',
+        'kodak': 'd:/datasets/kodak',
     }
     # get dataset root
     if args.dataset_path is None:
-        dataset_root = default_dataset_paths[args.dataset_name]
+        dataset_root = Path(default_dataset_paths[args.dataset_name])
     else:
         dataset_root = Path(args.dataset_path)
     assert dataset_root.is_dir(), f'{dataset_root=} does not exist.'
     logging.info('================================')
     logging.info(f'Data set name={args.dataset_name}, data path={args.dataset_path}')
-    logging.info('================================')
     # find all images
     image_paths = sorted(dataset_root.rglob('*.*'))
     logging.info(f'Found {len(image_paths)} images in {dataset_root}.')
     # results saving directory
     _results_root = Path(f'runs/evaluation')
-    all_quality_results_dir = _results_root / f'{args.codec}-{args.dataset}'
+    all_quality_results_dir = _results_root / f'{args.codec}-{args.dataset_name}'
     all_quality_results_dir.mkdir(parents=True, exist_ok=False)
-    final_result_path = _results_root / f'{args.codec}-{args.dataset}.json'
-    logging.info(f'Will save results to {all_quality_results_dir} and {final_result_path}')
+    final_result_path = _results_root / f'{args.codec}-{args.dataset_name}.json'
+    logging.info(f'Will save individual results to {all_quality_results_dir},',
+                 f'and will save overall results to {final_result_path}')
+    logging.info('================================')
 
     # set up multiprocessing
     pool = ThreadPool(processes=args.workers)
