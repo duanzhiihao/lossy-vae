@@ -1,23 +1,31 @@
-import time
-import argparse
-from multiprocessing.pool import ThreadPool
 from pathlib import Path
+from tempfile import gettempdir
 from collections import OrderedDict
+from multiprocessing.pool import ThreadPool
+import time
+import json
+import logging
+import argparse
+import random
 import numpy as np
 import cv2
+from timm.utils import AverageMeter
 
-import mycv.utils.vvc as vvc
-from mycv.utils import get_temp_file_path, json_load, json_dump
-
-from mycv.paths import all_dataset_paths
+import vvc
 
 
 def green_str(msg: str):
     return '\u001b[92m' + str(msg) + '\u001b[0m'
 
 
+def get_temp_file_path(suffix='.tmp'):
+    dictionary = 'abcdefghijklmnopqrstuvwxyz0123456789'
+    random_str = ''.join(random.choices(dictionary, k=16))
+    return Path(gettempdir()) / f'{random_str}{suffix}'
+
+
 def evaluate_one_image(img_path: Path, q: int, result_path: Path):
-    print(f'starting q={q}, image={img_path}, will save results to {result_path} ...')
+    logging.info(f'starting q={q}, image={img_path}, will save results to {result_path} ...')
 
     tic = time.time()
     im = cv2.cvtColor(cv2.imread(str(img_path)), cv2.COLOR_BGR2RGB)
@@ -47,37 +55,57 @@ def evaluate_one_image(img_path: Path, q: int, result_path: Path):
     stats['bpp']      = bpp
     stats['psnr']     = psnr
     if result_path.is_file():
-        all_images_results = json_load(result_path)
+        with open(result_path, mode='r') as f:
+            all_images_results = json.load(fp=f)
         assert isinstance(all_images_results, list)
         all_images_results.append(stats)
     else:
         all_images_results = [stats]
-    json_dump(all_images_results, result_path)
+    with open(result_path, mode='w') as f:
+        json.dump(all_images_results, fp=f, indent=2)
 
     elapsed = time.time() - tic
     msg = f'quality={q}, image={img_path.name}, time={elapsed:.1f}s, bpp={bpp}, psnr={psnr}'
-    print(green_str(msg))
+    logging.info(green_str(msg))
     return bpp, psnr
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('-c', '--codec',   type=str, default='vtm18.0')
-    parser.add_argument('-d', '--dataset', type=str, default='kodak')
-    parser.add_argument('-q', '--quality', type=int, nargs='+', default=list(range(10,51)))
-    parser.add_argument('-w', '--workers', type=int, default=2)
+    parser.add_argument('-c', '--codec',        type=str, default='vtm18.0')
+    parser.add_argument('-d', '--dataset_name', type=str, default='kodak')
+    parser.add_argument('-p', '--dataset_path', type=str, default=None)
+    parser.add_argument('-q', '--quality',      type=int, nargs='+', default=list(range(10,51)))
+    parser.add_argument('-w', '--workers',      type=int, default=2)
     args = parser.parse_args()
 
     # set VVC version
     vvc.version = args.codec
-    # dataset root
-    dataset_root = all_dataset_paths[args.dataset]
+
+    # init logging
+    logging.basicConfig(
+        level=logging.INFO, format= '[%(asctime)s] %(message)s', datefmt='%Y-%b-%d %H:%M:%S'
+    )
+
+    default_dataset_paths = {
+        'kodak':   'd:/datasets/kodak',
+    }
+    # get dataset root
+    if args.dataset_path is None:
+        dataset_root = default_dataset_paths[args.dataset_name]
+    else:
+        dataset_root = Path(args.dataset_path)
     assert dataset_root.is_dir(), f'{dataset_root=} does not exist.'
+    logging.info('================================')
+    logging.info(f'Data set name={args.dataset_name}, path={args.dataset_path}')
+    logging.info('================================')
+    # find all images
     image_paths = sorted(dataset_root.rglob('*.*'))
-    print(f'Found {len(image_paths)} images in {dataset_root}.')
+    logging.info(f'Found {len(image_paths)} images in {dataset_root}.')
     # results saving directory
     results_save_dir = Path(f'results/{args.codec}-{args.dataset}')
     results_save_dir.mkdir(parents=True, exist_ok=False)
+    logging.info(f'Will save results to {results_save_dir}...')
 
     # set up multiprocessing
     pool = ThreadPool(processes=args.workers)
