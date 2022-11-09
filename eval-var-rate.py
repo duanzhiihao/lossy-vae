@@ -12,7 +12,7 @@ from lvae.evaluation.image import imcoding_evaluate
 @torch.no_grad()
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('-m', '--model',        type=str,   default='vr_ch128n12_no4')
+    parser.add_argument('-m', '--model',        type=str,   default='vr_version2')
     parser.add_argument('-a', '--model_args',   type=str,   default='pretrained=True')
     parser.add_argument('-l', '--lmb_range',    type=float, default=[16, 1024], nargs='+')
     parser.add_argument('-s', '--steps',        type=int,   default=12)
@@ -31,7 +31,6 @@ def main():
     p = 3.0
     lambdas = torch.linspace(math.pow(start,1/p), math.pow(end,1/p), steps=args.steps).pow(3)
     log_lambdas = torch.log(lambdas)
-    # log_lambdas = torch.linspace(math.log(start), math.log(end), steps=12).tolist()
 
     save_json_path = Path(f'runs/results/{args.dataset_name}-{args.model}.json')
     if not save_json_path.parent.is_dir():
