@@ -126,7 +126,7 @@ def main():
     final_json_data = {
         'name': args.codec,
         'dataset_name': args.dataset_name,
-        'dataset_root': dataset_root,
+        'dataset_root': str(dataset_root),
         'quality': list(args.quality),
         'results': {
             'bpp': [],
