@@ -8,11 +8,14 @@ from pathlib import Path
 _root = Path('d:/datasets')
 
 known_datasets = {
-    # Kodak images: http://www.cs.albany.edu/~xypan/research/snr/Kodak.html
+    # Kodak images: http://r0k.us/graphics/kodak
     'kodak': _root / 'kodak',
 
     # CLIC dataset: http://www.compression.cc
     'clic2022-test': _root / 'clic/test-2022',
+
+    # Tecnick TESTIMAGES: https://testimages.org
+    'tecnick-rgb-1200': _root / 'tecnick/TESTIMAGES/RGB/RGB_OR_1200x1200',
 
     # COCO dataset: http://cocodataset.org
     'coco-train2017': _root / 'coco/train2017',
