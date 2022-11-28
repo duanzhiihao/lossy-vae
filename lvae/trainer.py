@@ -199,6 +199,14 @@ class BaseTrainingWrapper():
             lrf = min(t + 1, T_warm) / T_warm
         elif cfg.lr_sched == 'constant':
             lrf = 1.0
+        elif cfg.lr_sched == 'const-0.5-cos': # constant LR at first, then cosine LR
+            boundary = round(T * 0.5)
+            if t <= boundary:
+                lrf = 1.0
+            else:
+                current = t - boundary
+                total = T - boundary - 1
+                lrf = cfg.lrf_min + 0.5 * (1 - cfg.lrf_min) * (1 + math.cos(current * math.pi / total))
         else:
             raise NotImplementedError(f'cfg.lr_sched = {cfg.lr_sched} not implemented')
 
