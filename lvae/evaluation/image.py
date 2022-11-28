@@ -1,6 +1,7 @@
 from PIL import Image
 from tqdm import tqdm
 from pathlib import Path
+from tempfile import gettempdir
 from collections import defaultdict
 import math
 import torch
@@ -12,20 +13,24 @@ from lvae.paths import known_datasets
 
 @torch.no_grad()
 def imcoding_evaluate(model: torch.nn.Module, dataset: str):
-    tmp_bit_path = Path('tmp.bits')
     assert hasattr(model, 'compress_file')
     assert hasattr(model, 'decompress_file')
 
+    # find images
     root = known_datasets.get(dataset, Path(dataset))
     img_paths = list(root.rglob('*.*'))
     img_paths.sort()
+    # temp folder to save bits
+    tmp_bits_dir = Path(gettempdir())
+    # start for-loop
     pbar = tqdm(img_paths)
     all_image_stats = defaultdict(AverageMeter)
     for impath in pbar:
-        model.compress_file(impath, tmp_bit_path)
-        num_bits = tmp_bit_path.stat().st_size * 8
-        fake = model.decompress_file(tmp_bit_path).squeeze(0).cpu()
-        tmp_bit_path.unlink()
+        tmp_bits_path = tmp_bits_dir / f'{impath.stem}.bits'
+        model.compress_file(impath, tmp_bits_path)
+        num_bits = tmp_bits_path.stat().st_size * 8
+        fake = model.decompress_file(tmp_bits_path).squeeze(0).cpu()
+        tmp_bits_path.unlink()
 
         # compute psnr
         real = tvf.to_tensor(Image.open(impath))
