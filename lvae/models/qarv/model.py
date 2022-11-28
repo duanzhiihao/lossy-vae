@@ -318,8 +318,9 @@ class VariableRateLossyVAE(nn.Module):
         return input_
 
     def _lmb_scaling(self, lmb: torch.Tensor):
-        p = 3.0
-        lmb_input = torch.pow(lmb / self.MAX_LMB, 1/p) * self._sin_period
+        # p = 3.0
+        # lmb_input = torch.pow(lmb / self.MAX_LMB, 1/p) * self._sin_period
+        lmb_input = torch.log(lmb) * self._sin_period / math.log(self.MAX_LMB)
         return lmb_input
 
     def _get_lmb_embedding(self, lmb, n):

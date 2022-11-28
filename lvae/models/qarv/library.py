@@ -75,7 +75,7 @@ def qarv_base(lmb_range=(16,1024), pretrained=False):
 
     model = qarv.VariableRateLossyVAE(cfg)
     if pretrained:
-        url = 'https://huggingface.co/duanzh0/my-model-weights/resolve/main/qarv_z96-p3.pt'
+        url = 'https://huggingface.co/duanzh0/my-model-weights/resolve/main/qarv_base-nov28-2022.pt'
         msd = load_state_dict_from_url(url)['model']
         model.load_state_dict(msd)
     return model
