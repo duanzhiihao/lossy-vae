@@ -69,8 +69,6 @@ def parse_args():
 
 
 class TrainWrapper(BaseTrainingWrapper):
-    model_registry_group = 'generative'
-
     def __init__(self, cfg):
         super().__init__()
         self.main(cfg)
