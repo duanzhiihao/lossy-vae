@@ -26,7 +26,7 @@ def parse_args():
     parser.add_argument('--wbmode',     type=str,  default='disabled')
     parser.add_argument('--name',       type=str,  default=None)
     # model setting
-    parser.add_argument('--model',      type=str,  default='vr_ch128n12_no4')
+    parser.add_argument('--model',      type=str,  default='qarv_base')
     parser.add_argument('--model_args', type=str,  default='')
     # resume setting
     parser.add_argument('--resume',     type=str,  default=None)
@@ -37,13 +37,12 @@ def parse_args():
     parser.add_argument('--transform',  type=str,  default='crop=256,hflip=True')
     parser.add_argument('--valset',     type=str,  default='kodak')
     parser.add_argument('--val_steps',  type=int,  default=8)
-    # parser.add_argument('--val_bs',     type=int,  default=None)
     # optimization setting
     parser.add_argument('--batch_size', type=int,  default=16)
     parser.add_argument('--accum_num',  type=int,  default=1)
     parser.add_argument('--optimizer',  type=str,  default='adam')
     parser.add_argument('--lr',         type=float,default=2e-4)
-    parser.add_argument('--lr_sched',   type=str,  default='constant')
+    parser.add_argument('--lr_sched',   type=str,  default='const-0.5-cos')
     parser.add_argument('--lrf_min',    type=float,default=0.01)
     parser.add_argument('--lr_warmup',  type=int,  default=0)
     parser.add_argument('--grad_clip',  type=float,default=2.0)
@@ -51,7 +50,6 @@ def parse_args():
     parser.add_argument('--iterations', type=int,  default=2_000_000)
     parser.add_argument('--log_itv',    type=int,  default=100)
     parser.add_argument('--study_itv',  type=int,  default=2000)
-    # parser.add_argument('--save_per',   type=int,  default=1000)
     parser.add_argument('--eval_itv',   type=int,  default=2000)
     parser.add_argument('--eval_first', action=argparse.BooleanOptionalAction, default=True)
     # exponential moving averaging (EMA)
@@ -91,13 +89,16 @@ class TrainWrapper(BaseTrainingWrapper):
             self.set_wandb()
             self.set_ema()
 
+        # DDP mode
+        if self.distributed:
+            self.model = DDP(self.model, device_ids=[self.local_rank], output_device=self.local_rank)
+
         # the main training loops
         self.training_loops()
 
     def prepare_configs(self):
         super().prepare_configs()
         cfg = self.cfg
-        self.ddp_check_interval = cfg.eval_itv
         self.model_log_interval = cfg.study_itv
         self.wandb_log_interval = cfg.log_itv
 
