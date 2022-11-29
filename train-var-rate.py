@@ -283,12 +283,12 @@ class TrainWrapper(BaseTrainingWrapper):
         results['bd-rate'] = bdr
         print_json_like(results)
         # draw R-D curve
-        data = [[b,p] for b,p in zip(results['bpp'], results['psnr'])]
-        table = wandb.Table(data=data, columns=['bpp', 'psnr'])
-        self.wbrun.log(
-            {'psnr-rate' : wandb.plot.line(table, 'bpp', 'psnr', title='PSNR-Rate plot')},
-            step=self._cur_iter
-        )
+        # data = [[b,p] for b,p in zip(results['bpp'], results['psnr'])]
+        # table = wandb.Table(data=data, columns=['bpp', 'psnr'])
+        # self.wbrun.log(
+        #     {'psnr-rate' : wandb.plot.line(table, 'bpp', 'psnr', title='PSNR-Rate plot')},
+        #     step=self._cur_iter
+        # )
         return results_to_log
 
 def read_rd_stats_from_json(json_path):
