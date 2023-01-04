@@ -9,6 +9,7 @@ import argparse
 import math
 import numpy as np
 import torch
+import torch.nn.functional as tnf
 import torchvision.transforms.functional as tvf
 import compressai.zoo.image as czi
 
@@ -50,25 +51,27 @@ def evaluate_model(model, dataset_root):
         img_padded = pad_divisible_by(img, div=64)
         im = tvf.to_tensor(img_padded).unsqueeze_(0).to(device=device)
 
-        output = model.forward(im)
+        # output = model.forward(im)
+        compressed_obj = model.compress(im)
+        output = model.decompress(compressed_obj['strings'], compressed_obj['shape'])
+        im_hat = output['x_hat']
 
-        # psnr
-        real = np.array(img).astype(np.float32) / 255.0
-        fake = output['x_hat'].cpu().squeeze(0).permute(1,2,0)[:imgh, :imgw, :].numpy()
-        mse = np.square(real - fake).mean()
-        psnr = float(-10 * math.log10(mse))
         # bpp
-        likelihoods = output['likelihoods']
-        num_bits = -1.0 * torch.log2(likelihoods['y']).sum()
-        if 'z' in likelihoods:
-            bits2 = -1.0 * torch.log2(likelihoods['z']).sum()
-            num_bits = num_bits + bits2
-        bpp  = float(num_bits / (im.shape[2] * im.shape[3]))
+        bpp = get_object_bits(compressed_obj) / float(imgh * imgw)
+        # psnr
+        real = tvf.to_tensor(img)
+        fake = im_hat[0, :, :imgh, :imgw].cpu()
+        if False:
+            import matplotlib.pyplot as plt
+            plt.imshow(tvf.to_pil_image(fake))
+            plt.show()
+        mse = tnf.mse_loss(fake, real, reduction='mean')
+        psnr = float(-10 * math.log10(mse.item()))
 
         # logging
         pbar.set_description(f'image {impath.stem}: bpp={bpp:.5f}, psnr={psnr:.3f}')
         all_image_stats['bpp'] += bpp
-        all_image_stats['psnr']  += psnr
+        all_image_stats['psnr'] += psnr
         all_image_stats['count'] += 1
 
     # average over all images
@@ -82,7 +85,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('-m', '--model',   type=str, default='mbt2018-mean')
     parser.add_argument('-t', '--testset', type=str, default='kodak')
-    parser.add_argument('-d', '--device',  type=str, default='cuda:0')
+    parser.add_argument('-d', '--device',  type=str, default='cpu')
     args = parser.parse_args()
 
     device = torch.device(args.device)
