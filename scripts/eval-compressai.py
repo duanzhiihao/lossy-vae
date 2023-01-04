@@ -81,15 +81,15 @@ def evaluate_model(model, dataset_root):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('-m', '--model',   type=str, default='mbt2018-mean')
-    parser.add_argument('-d', '--dataset', type=str, default='kodak')
+    parser.add_argument('-t', '--testset', type=str, default='kodak')
     parser.add_argument('-d', '--device',  type=str, default='cuda:0')
     args = parser.parse_args()
 
     device = torch.device(args.device)
     model_name = args.model
 
-    dataset_root = known_datasets[args.dataset]
-    save_json_path = f'runs/results/{args.dataset}-{model_name}.json'
+    dataset_root = known_datasets[args.testset]
+    save_json_path = f'runs/results/{args.testset}-{model_name}.json'
 
     all_lmb_stats = defaultdict(list)
     max_quality = max(list(czi.model_urls[model_name]['mse'].keys()))
