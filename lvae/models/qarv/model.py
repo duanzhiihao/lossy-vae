@@ -406,11 +406,11 @@ class VariableRateLossyVAE(nn.Module):
         return stats
 
     def conditional_sample(self, lmb, latents, emb=None, bhw_repeat=None, t=1.0):
-        """ sampling, conditioned on (possibly a subset of) latents
+        """ sampling, conditioned on (a list of) latents
 
         Args:
-            latents (torch.Tensor): latent variables
-            bhw_repeat (tuple): the bias constant will be repeated (batch, height, width) times
+            latents (torch.Tensor): latent variables. If None, do unconditional sampling
+            bhw_repeat (tuple): the constant bias will be repeated (batch, height, width) times
             t (float): temprature
         """
         # initialize latents variables

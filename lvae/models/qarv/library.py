@@ -7,7 +7,7 @@ import lvae.models.qarv.model as qarv
 
 
 @register_model
-def qarv_base(lmb_range=(16,1024), pretrained=False):
+def qarv_base(lmb_range=(16,2048), pretrained=False):
     cfg = dict()
 
     # variable rate
