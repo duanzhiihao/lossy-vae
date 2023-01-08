@@ -51,7 +51,7 @@ def parse_args():
     parser.add_argument('--log_itv',    type=int,  default=100)
     parser.add_argument('--study_itv',  type=int,  default=2000)
     parser.add_argument('--eval_itv',   type=int,  default=2000)
-    parser.add_argument('--eval_first', action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument('--eval_first', action=argparse.BooleanOptionalAction, default=False)
     # exponential moving averaging (EMA)
     parser.add_argument('--ema',        action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument('--ema_decay',  type=float,default=0.9999)
