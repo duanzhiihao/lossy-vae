@@ -1,22 +1,33 @@
 # Lossy Image Compression using Hierarchical VAEs
 
 
+## Implemented Models
+TBD
+
+
 ## Install
 **Requirements**:
 - Python, `pytorch>=1.9`, `tqdm`, `compressai` ([link](https://github.com/InterDigitalInc/CompressAI)), `timm>=0.5.4` ([link](https://github.com/rwightman/pytorch-image-models)).
-
 
 **Download and Install**:
 1. Download the repository;
 2. Modify the dataset paths in `lossy-vae/lvae/paths.py`.
 
+## Datasets Download
+**COCO**
+1. Download the COCO dataset `2017 Train images [118K/18GB]` from https://cocodataset.org/#download
+2. Unzip the images anywhere, e.g., to `/path/to/coco/train2017`
+3. Edit `lossy-vae/lvae/paths.py` such that `known_datasets['coco-train2017'] = '/path/to/coco/train2017'`
 
-## Implemented Models
-TBD
+**Kodak**
+1. Download the 24 Kodak images from http://r0k.us/graphics/kodak
+2. Put them anywhere, e.g., at `/path/to/kodak`
+3. Edit `lossy-vae/lvae/paths.py` such that `known_datasets['kodak'] = '/path/to/kodak'`
 
 
 ## Usage
 Detailed usage is provided in each model's folder
+
 
 
 <!-- ## Evaluation

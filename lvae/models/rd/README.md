@@ -21,17 +21,6 @@ TBD
 
 
 ## Training
-### Data preparation
-**COCO**
-1. Download the COCO dataset `2017 Train images [118K/18GB]` from https://cocodataset.org/#download
-2. Unzip the images anywhere, e.g., to `/path/to/coco/train2017`
-3. Edit `lossy-vae/lvae/paths.py` such that `known_datasets['coco-train2017'] = '/path/to/coco/train2017'`
-
-**Kodak**
-1. Download the 24 Kodak images from http://r0k.us/graphics/kodak
-2. Put them anywhere, e.g., at `/path/to/kodak`
-3. Edit `lossy-vae/lvae/paths.py` such that `known_datasets['kodak'] = '/path/to/kodak'`
-
 
 ### Single GPU training
 ```
