@@ -25,7 +25,7 @@ def sinusoidal_embedding(values: torch.Tensor, dim=256, max_period=64):
     return embedding
 
 
-class MyConvNeXtBlockAdaLN(nn.Module):
+class ConvNeXtBlockAdaLN(nn.Module):
     def __init__(self, dim, embed_dim, out_dim=None, kernel_size=7, mlp_ratio=2,
                  residual=True, ls_init_value=1e-6):
         super().__init__()
@@ -76,7 +76,7 @@ class MyConvNeXtBlockAdaLN(nn.Module):
             x = x + shortcut
         return x
 
-class MyConvNeXtAdaLNPatchDown(MyConvNeXtBlockAdaLN):
+class ConvNeXtAdaLNPatchDown(ConvNeXtBlockAdaLN):
     def __init__(self, in_ch, out_ch, down_rate=2, **kwargs):
         super().__init__(in_ch, **kwargs)
         self.downsapmle = common.patch_downsample(in_ch, out_ch, rate=down_rate)
@@ -95,11 +95,11 @@ class VRLatentBlock3Pos(nn.Module):
 
         enc_width = enc_width or width
         concat_ch = (width * 2) if (enc_width is None) else (width + enc_width)
-        self.resnet_front = MyConvNeXtBlockAdaLN(width, embed_dim, kernel_size=kernel_size, mlp_ratio=mlp_ratio)
-        self.resnet_end   = MyConvNeXtBlockAdaLN(width, embed_dim, kernel_size=kernel_size, mlp_ratio=mlp_ratio)
-        self.posterior0 = MyConvNeXtBlockAdaLN(enc_width, embed_dim, kernel_size=kernel_size)
-        self.posterior1 = MyConvNeXtBlockAdaLN(width,     embed_dim, kernel_size=kernel_size)
-        self.posterior2 = MyConvNeXtBlockAdaLN(width,     embed_dim, kernel_size=kernel_size)
+        self.resnet_front = ConvNeXtBlockAdaLN(width, embed_dim, kernel_size=kernel_size, mlp_ratio=mlp_ratio)
+        self.resnet_end   = ConvNeXtBlockAdaLN(width, embed_dim, kernel_size=kernel_size, mlp_ratio=mlp_ratio)
+        self.posterior0 = ConvNeXtBlockAdaLN(enc_width, embed_dim, kernel_size=kernel_size)
+        self.posterior1 = ConvNeXtBlockAdaLN(width,     embed_dim, kernel_size=kernel_size)
+        self.posterior2 = ConvNeXtBlockAdaLN(width,     embed_dim, kernel_size=kernel_size)
         self.post_merge = common.conv_k1s1(concat_ch, width)
         self.posterior  = common.conv_k3s1(width, zdim)
         self.z_proj     = common.conv_k1s1(zdim, width)
