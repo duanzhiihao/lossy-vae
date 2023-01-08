@@ -241,7 +241,7 @@ class VariableRateLossyVAE(nn.Module):
 
         self.compressing = False
         # self._stats_log = dict()
-        self._logging_images = config.get('log_images', None)
+        self._logging_images = config.get('log_images', [])
         self._flops_mode = False
 
     def _setup_lmb_embedding(self, config):
