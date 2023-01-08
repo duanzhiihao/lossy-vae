@@ -19,6 +19,7 @@ known_datasets = {
 
     # COCO dataset: http://cocodataset.org
     'coco-train2017': _root / 'coco/train2017',
+    'coco-val2017':   _root / 'coco/val2017',
 
     # ImageNet dataset: http://www.image-net.org
     'imagenet-train': _root / 'imagenet/train',
