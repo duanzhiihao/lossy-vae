@@ -14,7 +14,7 @@ import lvae.models.common as common
 from lvae.models.qarv.model import sinusoidal_embedding, ConvNeXtBlockAdaLN, ConvNeXtAdaLNPatchDown
 
 
-def kl_with_log(mu1, logv1, mu2, logv2):
+def kl_with_logstd(mu1, logv1, mu2, logv2):
     """ Gaussian KL divergence with means and log-scales
 
     Args:
@@ -85,8 +85,10 @@ class VRLatentBlock3Pos(nn.Module):
         additional = dict()
         if mode == 'trainval': # training or validation
             qm, qlogv = self.transform_posterior(feature, enc_feature, lmb_embedding)
-            kl = kl_with_log(qm, qlogv, pm, plogv)
+            kl = kl_with_logstd(qm, qlogv, pm, plogv)
             additional['kl'] = kl
+            # sample z from posterior
+            z = qm + torch.exp(qlogv) * torch.randn_like(qm)
         elif mode == 'sampling':
             if latent is None: # if z is not provided, sample it from the prior
                 pv = torch.exp(plogv)

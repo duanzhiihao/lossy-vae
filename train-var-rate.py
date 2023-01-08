@@ -26,14 +26,14 @@ def parse_args():
     parser.add_argument('--wbmode',     type=str,  default='disabled')
     parser.add_argument('--name',       type=str,  default=None)
     # model setting
-    parser.add_argument('--model',      type=str,  default='qarv_base')
+    parser.add_argument('--model',      type=str,  default='rd_model_a')
     parser.add_argument('--model_args', type=str,  default='')
     # resume setting
     parser.add_argument('--resume',     type=str,  default=None)
     parser.add_argument('--weights',    type=str,  default=None)
     parser.add_argument('--load_optim', action=argparse.BooleanOptionalAction, default=False)
     # data setting
-    parser.add_argument('--trainset',   type=str,  default='coco_train2017')
+    parser.add_argument('--trainset',   type=str,  default='coco-train2017')
     parser.add_argument('--transform',  type=str,  default='crop=256,hflip=True')
     parser.add_argument('--valset',     type=str,  default='kodak')
     parser.add_argument('--val_steps',  type=int,  default=8)

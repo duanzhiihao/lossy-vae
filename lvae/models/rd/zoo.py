@@ -73,7 +73,7 @@ def rd_model_a(lmb_range=(16,2048), pretrained=False):
 
     cfg['log_images'] = ['collie64.png', 'gun128.png', 'motor256.png']
 
-    model = qarv.VariableRateLossyVAE(cfg)
+    model = lib.VariableRateLossyVAE(cfg)
     if pretrained:
         raise NotImplementedError()
         url = 'https://huggingface.co/duanzh0/my-model-weights/resolve/main/qarv_base-dec12-2022.pt'

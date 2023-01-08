@@ -1,9 +1,7 @@
 from PIL import Image
-from tqdm import tqdm
 from pathlib import Path
-import logging
+from torch.utils.data import Dataset, DataLoader
 import torchvision as tv
-from torch.utils.data import Dataset, DataLoader, DistributedSampler
 
 from lvae.paths import known_datasets
 
@@ -11,40 +9,19 @@ from lvae.paths import known_datasets
 class ImageDataset(Dataset):
     def __init__(self, root, transform):
         self.root = root # will be accessed by the training script
-        self.img_paths = []
         self.transform = transform
         # scan and add images
-        logging.info(f'Scanning through images in {root}...')
-        pbar = Path(root).rglob('*.*')
-        if logging.root.getEffectiveLevel() >= logging.INFO:
-            pbar = tqdm(pbar)
-        self.img_paths.extend(pbar)
+        self.image_paths = sorted(Path(root).rglob('*.*'))
+        assert len(self.image_paths) > 0, f'Found {len(self.image_paths)} images in {root}.'
 
     def __len__(self):
-        return len(self.img_paths)
+        return len(self.image_paths)
 
     def __getitem__(self, index):
-        impath = self.img_paths[index]
+        impath = self.image_paths[index]
         img = Image.open(impath).convert('RGB') 
         im = self.transform(img)
         return im
-
-
-class FunctionRegistry(dict):
-    def register(self, func):
-        self[func.__name__] = func
-        return func
-
-
-_datasets = FunctionRegistry()
-
-@_datasets.register
-def coco_train2017(transform):
-    return ImageDataset(root=known_datasets['coco-train2017'], transform=transform)
-
-@_datasets.register
-def vimeo90k(transform):
-    return ImageDataset(root=known_datasets['vimeo-90k'], transform=transform)
 
 
 def get_dateset(name: str, transform_cfg: str=None) -> Dataset:
@@ -54,6 +31,7 @@ def get_dateset(name: str, transform_cfg: str=None) -> Dataset:
         name (str): dataset name, see functions above
         transform_cfg (str, optional): config, example: 'crop=256,hflip=True'
     """
+    # make input transform
     transform = []
     if transform_cfg is not None:
         transform_cfg = eval(f'dict({transform_cfg})')
@@ -67,8 +45,8 @@ def get_dateset(name: str, transform_cfg: str=None) -> Dataset:
     transform.append(tv.transforms.ToTensor())
     transform = tv.transforms.Compose(transform)
 
-    dataset = _datasets[name](transform=transform)
-    assert isinstance(dataset, Dataset)
+    # find dataset root, and initialize dataset
+    dataset = ImageDataset(root=known_datasets.get(name, name), transform=transform)
     return dataset
 
 
