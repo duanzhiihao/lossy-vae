@@ -26,7 +26,8 @@ TBD
 ```
 python train-var-rate.py --model rd_model_a --batch_size 16 --iterations 1_000_000 --workers 4 --wbmode online
 ```
-Training progress is tracked using `wandb`: https://wandb.ai/home
+Training progress is tracked using `wandb`:  \
+By default, the run in in the https://wandb.ai/home > `default` project > `var-rate-exp` group.
 
 ### Single GPU training, using GPU id=2
 ```
