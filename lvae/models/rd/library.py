@@ -11,7 +11,7 @@ import torchvision.transforms.functional as tvf
 from timm.utils import AverageMeter
 
 import lvae.models.common as common
-from lvae.models.qarv.model import sinusoidal_embedding, ConvNeXtBlockAdaLN
+from lvae.models.qarv.model import sinusoidal_embedding, ConvNeXtBlockAdaLN, ConvNeXtAdaLNPatchDown
 
 
 def linear_sqrt(x: torch.Tensor, threshold=6.0):
