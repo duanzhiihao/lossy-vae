@@ -11,8 +11,32 @@ import torchvision.transforms.functional as tvf
 from timm.utils import AverageMeter
 
 import lvae.models.common as common
-from lvae.models.qarv.model import sinusoidal_embedding, ConvNeXtBlockAdaLN, ConvNeXtAdaLNPatchDown
+from lvae.models.qarv.model import sinusoidal_embedding, ConvNeXtBlockAdaLN
 
+
+def linear_sqrt(x: torch.Tensor, threshold=6.0):
+    """ linear fused with sqrt
+    Args:
+        x (torch.Tensor): input
+        threshold (float): values above this revert to a signed sqrt function
+    """
+    x_abs = torch.abs(x)
+    soft = torch.sign(x) * torch.pow(x_abs, 1 - 0.5*torch.tanh(x_abs))
+    soft = torch.where(x_abs == 0, input=x, other=soft)
+    # For numerical stability the implementation reverts to signed sqrt function when input > threshold
+    signed_sqrt = torch.sign(x) * torch.sqrt(x_abs + 1e-8)
+    x = torch.where(x_abs <= threshold, input=soft, other=signed_sqrt)
+    return x
+
+def gaussian_kl(mu1, v1, mu2, v2):
+    """ KL divergence with mean and scale (ie, standard deviations)
+    Args:
+        mu1 (torch.tensor): mean 1
+        v1  (torch.tensor): std 1
+        mu2 (torch.tensor): mean 2
+        v2  (torch.tensor): std 2
+    """
+    return -0.5 + v2.log() - v1.log() + 0.5 * (v1 ** 2 + (mu1 - mu2) ** 2) / (v2 ** 2)
 
 def kl_with_logstd(mu1, logv1, mu2, logv2):
     """ Gaussian KL divergence with means and log-scales
@@ -92,6 +116,95 @@ class VRLatentBlock3Pos(nn.Module):
         elif mode == 'sampling':
             if latent is None: # if z is not provided, sample it from the prior
                 pv = torch.exp(plogv)
+                z = pm + pv * torch.randn_like(pm) * t
+            else: # if `z` is provided, directly use it.
+                assert pm.shape == latent.shape
+                z = latent
+        else:
+            raise ValueError(f'Unknown mode={mode}')
+
+        feature = feature + self.z_proj(z)
+        feature = self.resnet_end(feature, lmb_embedding)
+        if get_latent:
+            additional['z'] = z.detach()
+        return feature, additional
+
+
+class VRLatentBlock3PosV2(nn.Module):
+    softplus_beta = math.log(2)
+    def __init__(self, width, zdim, embed_dim, enc_width=None, kernel_size=7, mlp_ratio=2):
+        super().__init__()
+        self.in_channels  = width
+        self.out_channels = width
+
+        enc_width = enc_width or width
+        concat_ch = (width * 2) if (enc_width is None) else (width + enc_width)
+        self.resnet_front = ConvNeXtBlockAdaLN(width, embed_dim, kernel_size=kernel_size, mlp_ratio=mlp_ratio)
+        self.resnet_end   = ConvNeXtBlockAdaLN(width, embed_dim, kernel_size=kernel_size, mlp_ratio=mlp_ratio)
+        self.posterior0 = ConvNeXtBlockAdaLN(enc_width, embed_dim, kernel_size=kernel_size)
+        self.posterior1 = ConvNeXtBlockAdaLN(width,     embed_dim, kernel_size=kernel_size)
+        self.posterior2 = ConvNeXtBlockAdaLN(width,     embed_dim, kernel_size=kernel_size)
+        self.post_merge = common.conv_k1s1(concat_ch, width)
+        self.posterior  = common.conv_k3s1(width, zdim*2)
+        self.prior      = common.conv_k1s1(width, zdim*2)
+        self.z_proj     = common.conv_k1s1(zdim, width)
+
+        self.is_latent_block = True
+
+    def std_smooth(self, v):
+        # https://arxiv.org/abs/2203.13751, section 4.2
+        v = tnf.softplus(v, beta=self.softplus_beta, threshold=12)
+        return v
+
+    def transform_prior(self, feature, lmb_embedding):
+        """ prior p(z_i | z_<i)
+
+        Args:
+            feature (torch.Tensor): feature map
+        """
+        feature = self.resnet_front(feature, lmb_embedding)
+        pm, pv = self.prior(feature).chunk(2, dim=1)
+        pm = linear_sqrt(pm)
+        pv = self.std_smooth(pv)
+        return feature, pm, pv
+
+    def transform_posterior(self, feature, enc_feature, lmb_embedding):
+        """ posterior q(z_i | z_<i, x)
+
+        Args:
+            feature     (torch.Tensor): feature map
+            enc_feature (torch.Tensor): feature map
+        """
+        assert feature.shape[2:4] == enc_feature.shape[2:4]
+        enc_feature = self.posterior0(enc_feature, lmb_embedding)
+        feature = self.posterior1(feature, lmb_embedding)
+        merged = torch.cat([feature, enc_feature], dim=1)
+        merged = self.post_merge(merged)
+        merged = self.posterior2(merged, lmb_embedding)
+        qm, qv = self.posterior(merged).chunk(2, dim=1)
+        qm = linear_sqrt(qm)
+        qv = self.std_smooth(qv)
+        return qm, qv
+
+    def forward(self, feature, lmb_embedding, enc_feature=None, mode='trainval',
+                get_latent=False, latent=None, t=1.0):
+        """ a complicated forward function
+
+        Args:
+            feature     (torch.Tensor): feature map
+            enc_feature (torch.Tensor): feature map
+        """
+        feature, pm, pv = self.transform_prior(feature, lmb_embedding)
+
+        additional = dict()
+        if mode == 'trainval': # training or validation
+            qm, qv = self.transform_posterior(feature, enc_feature, lmb_embedding)
+            kl = gaussian_kl(qm, qv, pm, pv)
+            additional['kl'] = kl
+            # sample z from posterior
+            z = qm + qv * torch.randn_like(qm)
+        elif mode == 'sampling':
+            if latent is None: # if z is not provided, sample it from the prior
                 z = pm + pv * torch.randn_like(pm) * t
             else: # if `z` is provided, directly use it.
                 assert pm.shape == latent.shape
