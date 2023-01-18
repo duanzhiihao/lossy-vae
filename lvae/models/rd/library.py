@@ -219,6 +219,91 @@ class VRLatentBlock3PosV2(nn.Module):
         return feature, additional
 
 
+class VRLatentBlockV3(nn.Module):
+    softplus_beta = math.log(2)
+    def __init__(self, width, zdim, embed_dim, enc_width=None, kernel_size=7, mlp_ratio=2):
+        super().__init__()
+        self.in_channels  = width
+        self.out_channels = width
+
+        enc_width = enc_width or width
+        concat_ch = (width * 2) if (enc_width is None) else (width + enc_width)
+        self.resnet_front = ConvNeXtBlockAdaLN(width, embed_dim, kernel_size=kernel_size, mlp_ratio=mlp_ratio)
+        self.resnet_end   = ConvNeXtBlockAdaLN(width, embed_dim, kernel_size=kernel_size, mlp_ratio=mlp_ratio)
+        self.posterior2 = ConvNeXtBlockAdaLN(width,     embed_dim, kernel_size=kernel_size)
+        self.post_merge = common.conv_k1s1(concat_ch, width)
+        self.posterior  = common.conv_k3s1(width, zdim*2)
+        self.prior      = common.conv_k1s1(width, zdim*2)
+        self.z_proj     = common.conv_k1s1(zdim, width)
+
+        self.is_latent_block = True
+
+    def std_smooth(self, v):
+        # https://arxiv.org/abs/2203.13751, section 4.2
+        v = tnf.softplus(v, beta=self.softplus_beta, threshold=12)
+        return v
+
+    def transform_prior(self, feature, lmb_embedding):
+        """ prior p(z_i | z_<i)
+
+        Args:
+            feature (torch.Tensor): feature map
+        """
+        feature = self.resnet_front(feature, lmb_embedding)
+        pm, pv = self.prior(feature).chunk(2, dim=1)
+        pm = linear_sqrt(pm)
+        pv = self.std_smooth(pv)
+        return feature, pm, pv
+
+    def transform_posterior(self, feature, enc_feature, lmb_embedding):
+        """ posterior q(z_i | z_<i, x)
+
+        Args:
+            feature     (torch.Tensor): feature map
+            enc_feature (torch.Tensor): feature map
+        """
+        assert feature.shape[2:4] == enc_feature.shape[2:4]
+        merged = torch.cat([feature, enc_feature], dim=1)
+        merged = self.post_merge(merged)
+        merged = self.posterior2(merged, lmb_embedding)
+        qm, qv = self.posterior(merged).chunk(2, dim=1)
+        qm = linear_sqrt(qm)
+        qv = self.std_smooth(qv)
+        return qm, qv
+
+    def forward(self, feature, lmb_embedding, enc_feature=None, mode='trainval',
+                get_latent=False, latent=None, t=1.0):
+        """ a complicated forward function
+
+        Args:
+            feature     (torch.Tensor): feature map
+            enc_feature (torch.Tensor): feature map
+        """
+        feature, pm, pv = self.transform_prior(feature, lmb_embedding)
+
+        additional = dict()
+        if mode == 'trainval': # training or validation
+            qm, qv = self.transform_posterior(feature, enc_feature, lmb_embedding)
+            kl = gaussian_kl(qm, qv, pm, pv)
+            additional['kl'] = kl
+            # sample z from posterior
+            z = qm + qv * torch.randn_like(qm)
+        elif mode == 'sampling':
+            if latent is None: # if z is not provided, sample it from the prior
+                z = pm + pv * torch.randn_like(pm) * t
+            else: # if `z` is provided, directly use it.
+                assert pm.shape == latent.shape
+                z = latent
+        else:
+            raise ValueError(f'Unknown mode={mode}')
+
+        feature = feature + self.z_proj(z)
+        feature = self.resnet_end(feature, lmb_embedding)
+        if get_latent:
+            additional['z'] = z.detach()
+        return feature, additional
+
+
 class FeatureExtractor(nn.Module):
     def __init__(self, blocks):
         super().__init__()
