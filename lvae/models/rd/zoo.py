@@ -276,7 +276,7 @@ def rd_model_d(lmb_range=(16,2048), pretrained=False):
         *[lib.VRLatentBlockV3(dec_dims[3], z_dims[3], _emb_dim, enc_width=enc_dims[-4]) for _ in range(4)],
         common.patch_upsample(dec_dims[3], dec_dims[4], rate=2),
         # 16x16
-        *[lib.VRLatentBlockV3(dec_dims[4], z_dims[4], _emb_dim, enc_width=enc_dims[-5]) for _ in range(6)],
+        *[lib.VRLatentBlockV3(dec_dims[4], z_dims[4], _emb_dim, enc_width=enc_dims[-5]) for _ in range(4)],
         common.patch_upsample(dec_dims[4], im_channels, rate=4)
     ]
 
