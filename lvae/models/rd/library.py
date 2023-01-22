@@ -414,10 +414,13 @@ class VariableRateLossyVAE(nn.Module):
 
     def sample_lmb(self, n):
         low, high = self.lmb_range # original lmb space, 16 to 1024
-        p = 3.0
-        low, high = math.pow(low, 1/p), math.pow(high, 1/p) # transformed space
+        # p = 3.0
+        # low, high = math.pow(low, 1/p), math.pow(high, 1/p) # transformed space
+        # transformed_lmb = low + (high-low) * torch.rand(n, device=self._dummy.device)
+        # lmb = torch.pow(transformed_lmb, exponent=p)
+        low, high = math.log(low), math.log(high) # transformed space
         transformed_lmb = low + (high-low) * torch.rand(n, device=self._dummy.device)
-        lmb = torch.pow(transformed_lmb, exponent=p)
+        lmb = torch.exp(transformed_lmb)
         return lmb
 
     def expand_to_tensor(self, input_, n):
