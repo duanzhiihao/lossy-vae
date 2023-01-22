@@ -349,7 +349,7 @@ def rd_model_e(lmb_range=(16,2048), pretrained=False):
         common.patch_upsample(dec_dims[3], dec_dims[4], rate=2),
         # 16x16
         *[lib.VRLatentBlock3PosV2(dec_dims[4], z_dims[4], _emb_dim, enc_width=enc_dims[-5]) for _ in range(3)],
-        common.patch_upsample(dec_dims[4], dec_dims[5], rate=2)
+        common.patch_upsample(dec_dims[4], dec_dims[5], rate=2),
         # 32x32
         *[lib.VRLatentBlock3PosV2(dec_dims[5], z_dims[5], _emb_dim, enc_width=enc_dims[-6]) for _ in range(2)],
         common.patch_upsample(dec_dims[5], im_channels, rate=2)
