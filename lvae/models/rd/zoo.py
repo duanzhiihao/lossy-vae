@@ -498,7 +498,10 @@ def rd_model_j(lmb_range=(16,1000), pretrained=False):
     cfg['log_images'] = ['collie64.png', 'gun128.png', 'motor256.png']
 
     model = lib.VariableRateLossyVAE(cfg)
-    if pretrained:
+    if isinstance(pretrained, str):
+        msd = torch.load(pretrained)['model']
+        model.load_state_dict(msd)
+    elif pretrained:
         raise NotImplementedError()
         url = 'https://huggingface.co/duanzh0/my-model-weights/resolve/main/qarv_base-dec12-2022.pt'
         msd = load_state_dict_from_url(url)['model']
