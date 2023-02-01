@@ -438,22 +438,20 @@ def rd_model_e(lmb_range=(16,2048), pretrained=False):
     return model
 
 
-@register_model #increase enc_dim and dec_dim from model c
-def rd_model_i(lmb_range=(16,2048), pretrained=False):
+@register_model #increase enc_dim and dec_dim from model i
+def rd_model_j(lmb_range=(16,1000), pretrained=False):
     cfg = dict()
- 
+
     # variable rate
     cfg['lmb_range'] = (float(lmb_range[0]), float(lmb_range[1]))
     cfg['lmb_embed_dim'] = (256, 256)
     cfg['sin_period'] = 64
     _emb_dim = cfg['lmb_embed_dim'][1]
- 
-    ch = 128
- 
-    enc_dims = [192, ch*4, ch*5, ch*5, ch*5]
-    dec_dims = [ch*5, ch*5, ch*4, ch*3, ch*2]
+
+    enc_dims = [256, 512, 640, 768, 768]
+    dec_dims = [768, 768, 640, 512, 256]
     z_dims = [32, 32, 32, 32, 32]
- 
+
     im_channels = 3
     cfg['enc_blocks'] = [
         # 64x64
@@ -473,7 +471,7 @@ def rd_model_i(lmb_range=(16,2048), pretrained=False):
         # 1x1
         *[lib.ConvNeXtBlockAdaLN(enc_dims[3], _emb_dim) for _ in range(4)],
     ]
- 
+
     cfg['dec_blocks'] = [
         # 1x1
         *[lib.VRLatentBlock3PosV2(dec_dims[0], z_dims[0], _emb_dim, enc_width=enc_dims[-1]) for _ in range(1)],
@@ -491,14 +489,14 @@ def rd_model_i(lmb_range=(16,2048), pretrained=False):
         *[lib.VRLatentBlock3PosV2(dec_dims[4], z_dims[4], _emb_dim, enc_width=enc_dims[-5]) for _ in range(5)],
         common.patch_upsample(dec_dims[4], im_channels, rate=4)
     ]
- 
+
     # mean and std computed on imagenet
     cfg['im_shift'] = -0.4546259594901961
     cfg['im_scale'] = 3.67572653978347
     cfg['max_stride'] = 64
- 
+
     cfg['log_images'] = ['collie64.png', 'gun128.png', 'motor256.png']
- 
+
     model = lib.VariableRateLossyVAE(cfg)
     if pretrained:
         raise NotImplementedError()
