@@ -9,7 +9,7 @@ import torch
 import torchvision as tv
 import torchvision.transforms.functional as tvf
 
-from lvae.models.qarv.library import qarv_base
+from lvae.models.qarv.zoo import qarv_base
 
 
 @torch.no_grad()

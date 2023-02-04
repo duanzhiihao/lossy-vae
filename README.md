@@ -12,6 +12,11 @@ TBD
 **Download and Install**:
 1. Download the repository;
 2. Modify the dataset paths in `lossy-vae/lvae/paths.py`.
+3. [Optional, needed for using `scripts/*.py`] pip install the repository in development mode:
+```
+cd /pasth/to/lossy-vae
+python -m pip install -e .
+```
 
 ## Datasets Download
 **COCO**
