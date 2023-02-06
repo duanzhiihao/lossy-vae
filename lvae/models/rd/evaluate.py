@@ -44,9 +44,8 @@ def evaluate_model(model, lmb, dataset_name):
         mse = tnf.mse_loss(real, fake, reduction='mean').item()
         psnr = float(-10 * math.log10(mse))
         # accumulate results
-        all_image_stats['count'] += 1
-        all_image_stats['bpp']  += bpp_theoretical
-        all_image_stats['psnr'] += psnr
+        all_image_stats['bpp'].update(bpp_theoretical)
+        all_image_stats['psnr'].update(psnr)
 
     results = {k: meter.avg for k,meter in all_image_stats.items()}
     return results
