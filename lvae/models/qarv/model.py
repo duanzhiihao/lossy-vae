@@ -416,10 +416,11 @@ class VariableRateLossyVAE(nn.Module):
         # initialize latents variables
         if latents is None: # unconditional sampling
             latents = [None] * self.num_latents
+        if latents[0] is None:
             assert bhw_repeat is not None, f'bhw_repeat should be provided'
             nB, nH, nW = bhw_repeat
         else: # conditional sampling
-            assert (bhw_repeat is None) and (len(latents) == self.num_latents)
+            assert (len(latents) == self.num_latents)
             nB, _, nH, nW = latents[0].shape
         # initialize lmb and embedding
         lmb = self.expand_to_tensor(lmb, n=nB)
