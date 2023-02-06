@@ -20,7 +20,7 @@ def evaluate_model(model, lmb, dataset_name):
     # get list of image paths
     img_dir = known_datasets[dataset_name]
     img_paths = list(Path(img_dir).rglob('*.*'))
-    pbar = tqdm(img_paths) if pbar else img_paths
+    pbar = tqdm(img_paths)
     # evaluate model
     all_image_stats = defaultdict(AverageMeter)
     for impath in pbar:
