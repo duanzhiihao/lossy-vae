@@ -70,10 +70,13 @@ def main():
     model.eval()
 
     start, end = args.lmb_range
-    p = 3.0
+    # p = 3.0
+    # lambdas = torch.linspace(
+    #     math.pow(start,1/p), math.pow(end,1/p), steps=args.steps
+    # ).pow(p).tolist()
     lambdas = torch.linspace(
-        math.pow(start,1/p), math.pow(end,1/p), steps=args.steps
-    ).pow(p).tolist()
+        math.log(start), math.log(end), steps=args.steps
+    ).exp().tolist()
 
     save_json_path = Path(f'runs/results/{args.dataset_name}-{args.model}.json')
     if not save_json_path.parent.is_dir():
