@@ -95,6 +95,8 @@ def main():
     json_data['results'] = all_lmb_stats
     with open(save_json_path, 'w') as f:
         json.dump(json_data, fp=f, indent=4)
+    print(f'Saved results to {save_json_path}.')
+
     # print results
     for k, vlist in all_lmb_stats.items():
         vlist_str = ', '.join([f'{v:.12f}'[:7] for v in vlist])
