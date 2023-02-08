@@ -6,8 +6,8 @@ import lvae.models.common as common
 import lvae.models.rd.library as lib
 
 
-@register_model #increase enc_dim and dec_dim from model i
-def rd_model_j(lmb_range=(4,2048), pretrained=False):
+@register_model
+def rd_model_base(lmb_range=(4,2048), pretrained=False):
     cfg = dict()
 
     # variable rate
@@ -79,7 +79,7 @@ def rd_model_j(lmb_range=(4,2048), pretrained=False):
 
 @torch.no_grad()
 def main():
-    model = rd_model_j()
+    model = rd_model_base()
     num = sum([p.numel() for p in model.parameters() if p.requires_grad])
     print(f'Number of parameters = {num/1e6:.2f} M')
     debug = 1
