@@ -39,7 +39,7 @@ def gaussian_kl(mu1, v1, mu2, v2):
     return -0.5 + v2.log() - v1.log() + 0.5 * (v1 ** 2 + (mu1 - mu2) ** 2) / (v2 ** 2)
 
 
-class VRLatentBlock3PosOld(nn.Module):
+class LatentVariableBlockOld(nn.Module):
     softplus_beta = math.log(2)
     def __init__(self, width, zdim, embed_dim, enc_width=None, kernel_size=7, mlp_ratio=2):
         super().__init__()
@@ -126,7 +126,7 @@ class VRLatentBlock3PosOld(nn.Module):
         return feature, additional
 
 
-class VRLatentBlock3PosV2(nn.Module):
+class LatentVariableBlock(nn.Module):
     softplus_beta = math.log(2)
     def __init__(self, width, zdim, embed_dim, enc_width=None, kernel_size=7, mlp_ratio=2):
         super().__init__()
