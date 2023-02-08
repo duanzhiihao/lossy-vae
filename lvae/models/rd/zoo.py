@@ -87,8 +87,9 @@ def rd_ablation_c64_l5_nosmooth(lmb_range=(4,2048), pretrained=False):
     cfg['sin_period'] = 64
     _emb_dim = cfg['lmb_embed_dim'][1]
 
-    enc_dims = [256, 512, 640, 768, 768]
-    dec_dims = [768, 768, 640, 512, 256]
+    dim = 64 # base channel dimension
+    enc_dims = [dim*2, dim*4, dim*5, dim*6, dim*6]
+    dec_dims = [dim*6, dim*6, dim*5, dim*4, dim*2]
     z_dims = [32, 32, 32, 32, 32]
 
     im_channels = 3
@@ -116,16 +117,16 @@ def rd_ablation_c64_l5_nosmooth(lmb_range=(4,2048), pretrained=False):
         *[lib.VRLatentBlock3PosOld(dec_dims[0], z_dims[0], _emb_dim, enc_width=enc_dims[-1]) for _ in range(1)],
         common.patch_upsample(dec_dims[0], dec_dims[1], rate=2),
         # 2x2
-        *[lib.VRLatentBlock3PosOld(dec_dims[1], z_dims[1], _emb_dim, enc_width=enc_dims[-2]) for _ in range(2)],
+        *[lib.VRLatentBlock3PosOld(dec_dims[1], z_dims[1], _emb_dim, enc_width=enc_dims[-2]) for _ in range(1)],
         common.patch_upsample(dec_dims[1], dec_dims[2], rate=2),
         # 4x4
-        *[lib.VRLatentBlock3PosOld(dec_dims[2], z_dims[2], _emb_dim, enc_width=enc_dims[-3]) for _ in range(3)],
+        *[lib.VRLatentBlock3PosOld(dec_dims[2], z_dims[2], _emb_dim, enc_width=enc_dims[-3]) for _ in range(1)],
         common.patch_upsample(dec_dims[2], dec_dims[3], rate=2),
         # 8x8
-        *[lib.VRLatentBlock3PosOld(dec_dims[3], z_dims[3], _emb_dim, enc_width=enc_dims[-4]) for _ in range(4)],
+        *[lib.VRLatentBlock3PosOld(dec_dims[3], z_dims[3], _emb_dim, enc_width=enc_dims[-4]) for _ in range(1)],
         common.patch_upsample(dec_dims[3], dec_dims[4], rate=2),
         # 16x16
-        *[lib.VRLatentBlock3PosOld(dec_dims[4], z_dims[4], _emb_dim, enc_width=enc_dims[-5]) for _ in range(5)],
+        *[lib.VRLatentBlock3PosOld(dec_dims[4], z_dims[4], _emb_dim, enc_width=enc_dims[-5]) for _ in range(1)],
         common.patch_upsample(dec_dims[4], im_channels, rate=4)
     ]
 
