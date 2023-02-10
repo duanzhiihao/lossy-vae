@@ -24,19 +24,19 @@ TBD
 
 ### Single GPU training
 ```
-python train-var-rate.py --model rd_model_a --batch_size 16 --iterations 1_000_000 --workers 4 --wbmode online
+python train-var-rate.py --model rd_model_base --batch_size 16 --iterations 200_000 --workers 4 --wbmode online
 ```
-Training progress is tracked using `wandb`:  \
+Training progress is tracked using `wandb`.
 By default, the run in in the https://wandb.ai/home > `default` project > `var-rate-exp` group.
 
 ### Single GPU training, using GPU id=2
 ```
-CUDA_VISIBLE_DEVICES=2 python train-var-rate.py --model rd_model_a --batch_size 16 --iterations 1_000_000 --workers 4 --wbmode online
+CUDA_VISIBLE_DEVICES=2 python train-var-rate.py --model rd_model_base --batch_size 16 --iterations 200_000 --workers 4 --wbmode online
 ```
 
 ### Multi-GPU training, using two GPUs id=4,5
 ```
-CUDA_VISIBLE_DEVICES=4,5 torchrun --nproc_per_node 2 train-var-rate.py --model rd_model_a --batch_size 16 --iterations 1_000_000 --workers 4 --wbmode online
+CUDA_VISIBLE_DEVICES=4,5 torchrun --nproc_per_node 2 train-var-rate.py --model rd_model_base --batch_size 16 --iterations 200_000 --workers 4 --wbmode online
 ```
 
 
