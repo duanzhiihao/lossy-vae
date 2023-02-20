@@ -1,5 +1,6 @@
 # Lossy Image Compression using Hierarchical VAEs
 
+This repository is still under construction.
 
 ## Implemented Models
 TBD
