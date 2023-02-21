@@ -1,7 +1,8 @@
 # QARV: Quantization-Aware ResNet VAE for Lossy Image Compression
 
-**Paper:** TBD, published at TBD \
-**Arxiv:** https://arxiv.org/abs/2302.08899
+Authors' implementation of the paper "QARV: Quantization-Aware ResNet VAE for Lossy Image Compression"
+- **Technical report**
+- **Arxiv:** https://arxiv.org/abs/2302.08899
 
 
 ## Features
@@ -11,9 +12,10 @@ TBD
 ## Pre-trained models
 Note: BD-rate is w.r.t. VTM 18.0
 
-|   Name    | Bpp range (Kodak) | BD-rate (Kodak) |
-|:---------:|:-----------------:|:---------------:|
-| qarv_base |  `0.217 - 2.219`  |     -6.537      |
+|    Name    | Param | Bpp range (Kodak) | BD-rate (Kodak) |
+| :--------: | :---: | :---------------: | :-------------: |
+| qarv_base  | 93.4M |  `0.217 - 2.219`  |     -6.537      |
+| qarv_small | 50.7M |        TBD        |       TBD       |
 
 
 ## Usage
