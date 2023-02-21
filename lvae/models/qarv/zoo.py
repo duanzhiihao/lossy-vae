@@ -92,7 +92,7 @@ def qarv_small(lmb_range=(16,2048), pretrained=False):
     _emb_dim = cfg['lmb_embed_dim'][1]
 
     ch = 128
-    enc_dims = [192, ch*3, ch*4, ch*4, ch*4]
+    enc_dims = [ch*1, ch*2, ch*3, ch*4, ch*4]
     dec_dims = [ch*4, ch*4, ch*3, ch*2, ch*1]
     z_dims = [32, 32, 96, 12]
 

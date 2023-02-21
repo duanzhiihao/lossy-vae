@@ -1,7 +1,7 @@
 # QARV: Quantization-Aware ResNet VAE for Lossy Image Compression
 
 **Paper:** TBD, published at TBD \
-**Arxiv:** TBD
+**Arxiv:** https://arxiv.org/abs/2302.08899
 
 
 ## Features
