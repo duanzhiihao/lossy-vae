@@ -44,7 +44,7 @@ class ConvNeXtBlockAdaLN(nn.Module):
         # MLP
         hidden = int(mlp_ratio * dim)
         out_dim = out_dim or dim
-        from timm.models.layers.mlp import Mlp
+        from timm.layers.mlp import Mlp
         self.mlp = Mlp(dim, hidden_features=hidden, out_features=out_dim, act_layer=nn.GELU)
         # layer scaling
         if ls_init_value >= 0:
@@ -87,20 +87,19 @@ class ConvNeXtAdaLNPatchDown(ConvNeXtBlockAdaLN):
         return out
 
 
-class VRLatentBlock3Pos(nn.Module):
+class VRLatentBlockBase(nn.Module):
     def __init__(self, width, zdim, embed_dim, enc_width=None, kernel_size=7, mlp_ratio=2):
         super().__init__()
         self.in_channels  = width
         self.out_channels = width
 
-        enc_width = enc_width or width
-        concat_ch = (width * 2) if (enc_width is None) else (width + enc_width)
         self.resnet_front = ConvNeXtBlockAdaLN(width, embed_dim, kernel_size=kernel_size, mlp_ratio=mlp_ratio)
         self.resnet_end   = ConvNeXtBlockAdaLN(width, embed_dim, kernel_size=kernel_size, mlp_ratio=mlp_ratio)
         self.posterior0 = ConvNeXtBlockAdaLN(enc_width, embed_dim, kernel_size=kernel_size)
         self.posterior1 = ConvNeXtBlockAdaLN(width,     embed_dim, kernel_size=kernel_size)
         self.posterior2 = ConvNeXtBlockAdaLN(width,     embed_dim, kernel_size=kernel_size)
-        self.post_merge = common.conv_k1s1(concat_ch, width)
+        enc_width = enc_width or width
+        self.post_merge = common.conv_k1s1(width + enc_width, width)
         self.posterior  = common.conv_k3s1(width, zdim)
         self.z_proj     = common.conv_k1s1(zdim, width)
         self.prior      = common.conv_k1s1(width, zdim*2)
@@ -189,6 +188,40 @@ class VRLatentBlock3Pos(nn.Module):
 
     def update(self):
         self.discrete_gaussian.update()
+
+
+class VRLatentBlockSmall(VRLatentBlockBase):
+    def __init__(self, width, zdim, embed_dim, enc_width=None, **kwargs):
+        super(VRLatentBlockBase, self).__init__()
+        self.in_channels  = width
+        self.out_channels = width
+
+        enc_width = enc_width or width
+        concat_ch = (width * 2) if (enc_width is None) else (width + enc_width)
+        self.resnet_front = ConvNeXtBlockAdaLN(width, embed_dim, **kwargs)
+        self.resnet_end   = ConvNeXtBlockAdaLN(width, embed_dim, **kwargs)
+        self.posterior2   = ConvNeXtBlockAdaLN(width, embed_dim, **kwargs)
+        self.post_merge = common.conv_k1s1(concat_ch, width)
+        self.posterior  = common.conv_k3s1(width, zdim)
+        self.z_proj     = common.conv_k1s1(zdim, width)
+        self.prior      = common.conv_k1s1(width, zdim*2)
+
+        self.discrete_gaussian = entropy_coding.DiscretizedGaussian()
+        self.is_latent_block = True
+
+    def transform_posterior(self, feature, enc_feature, lmb_embedding):
+        """ posterior q(z_i | z_<i, x)
+
+        Args:
+            feature     (torch.Tensor): feature map
+            enc_feature (torch.Tensor): feature map
+        """
+        assert feature.shape[2:4] == enc_feature.shape[2:4]
+        merged = torch.cat([feature, enc_feature], dim=1)
+        merged = self.post_merge(merged)
+        merged = self.posterior2(merged, lmb_embedding)
+        qm = self.posterior(merged)
+        return qm
 
 
 class FeatureExtractor(nn.Module):
