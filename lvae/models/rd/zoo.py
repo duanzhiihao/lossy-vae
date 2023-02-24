@@ -66,12 +66,12 @@ def rd_model_base(lmb_range=(4,2048), pretrained=False):
     cfg['log_images'] = ['collie64.png', 'gun128.png', 'motor256.png']
 
     model = lib.VariableRateLossyVAE(cfg)
-    if isinstance(pretrained, str):
-        msd = torch.load(pretrained)['model']
-        model.load_state_dict(msd)
-    elif pretrained:
+    if pretrained is True:
         url = 'https://huggingface.co/duanzh0/my-model-weights/resolve/main/rd_model_base-200k-feb14-2023.pt'
         msd = load_state_dict_from_url(url)['model']
+        model.load_state_dict(msd)
+    elif isinstance(pretrained, str):
+        msd = torch.load(pretrained)['model']
         model.load_state_dict(msd)
     return model
 

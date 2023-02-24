@@ -1,4 +1,4 @@
-import math
+import torch
 from torch.hub import load_state_dict_from_url
 
 from lvae.models.registry import register_model
@@ -74,9 +74,12 @@ def qarv_base(lmb_range=(16,2048), pretrained=False):
     cfg['log_images'] = ['collie64.png', 'gun128.png', 'motor256.png']
 
     model = qarv.VariableRateLossyVAE(cfg)
-    if pretrained:
+    if pretrained is True:
         url = 'https://huggingface.co/duanzh0/my-model-weights/resolve/main/qarv_base-dec12-2022.pt'
         msd = load_state_dict_from_url(url)['model']
+        model.load_state_dict(msd)
+    elif isinstance(pretrained, str):
+        msd = torch.load(pretrained)['model']
         model.load_state_dict(msd)
     return model
 
@@ -142,9 +145,9 @@ def qarv_small(lmb_range=(16,2048), pretrained=False):
     cfg['log_images'] = ['collie64.png', 'gun128.png', 'motor256.png']
 
     model = qarv.VariableRateLossyVAE(cfg)
-    if pretrained:
+    if pretrained is True:
         raise NotImplementedError()
-        url = 'tbd'
-        msd = load_state_dict_from_url(url)['model']
+    elif isinstance(pretrained, str):
+        msd = torch.load(pretrained)['model']
         model.load_state_dict(msd)
     return model
