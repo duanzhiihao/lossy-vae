@@ -1,15 +1,40 @@
 # Lossy Image Compression using Hierarchical VAEs
 
-This repository is still under construction.
+This repository contains authors' implementation of several deep hierarchical VAE-based methods related to lossy image compression. \
+Code is under active development, and the API is subject to change.
+
+### Features
+**Progressive coding:** our models learns *a deep hierarchy of* latent variables. It compresses images in a *coarse-to-fine* fashion. This feature comes from the hierarchical nature of ResNet VAEs.
+<p align="center">
+  <img src="https://user-images.githubusercontent.com/24869582/187014268-405851e8-b8a5-47e3-b28d-7b5d4ac20316.png" width="756" height="300">
+</p>
+
+**Compression efficiency**: our models are powerful in terms of both rate-distortion (bpp-PSNR) and decoding speed.
+
+<div align="center">
+
+|  Model Name | CPU* Enc. | CPU* Dec. | 1080 ti Enc. | 1080 ti Dec. | BD-rate* |
+|:-----------:|:---------:|:---------:|:------------:|:------------:|:--------:|
+|  `qres34m`  |   0.899s  |   0.441s  |    0.213s    |    0.120s    |   -3.95  |
+| `qarv_base` |   0.880s  |   0.295s  |    0.211s    |    0.096s    |   -6.54  |
+
+</div>
+
+*Time is the latency to encode/decode a 512x768 image, averaged over 24 Kodak images. Tested in plain PyTorch (v1.13 + CUDA 11.7) code, ie, no mixed-precision, torchscript, ONNX/TensorRT, etc. \
+*CPU is Intel 10700k. \
+*BD-rate is w.r.t. [VTM 18.0](https://vcgit.hhi.fraunhofer.de/jvet/VVCSoftware_VTM/-/tree/VTM-18.0), averaged on three common test sets (Kodak, Tecnick TESTIMAGES, and CLIC 2022 test set).
+
 
 ## Implemented Methods
 - **Lossy Image Compression with Quantized Hierarchical VAEs**
-    - WACV 2023, **Best Algorithms Paper Award** [[arXiv](https://arxiv.org/abs/2208.13056)]
-    - Code coming soon
+    - WACV 2023, ***Best Algorithms Paper Award*** [[arXiv](https://arxiv.org/abs/2208.13056)]
+    - Abstract: a 12-layer VAE model named QRes-VAE. Good compression performance.
+    - Code at [lossy-vae/lvae/models/qres](lvae/models/qres)
 - **An Improved Upper Bound on the Rate-Distortion Function of Images**
     - Code at [lossy-vae/lvae/models/rd](lvae/models/rd)
 - **QARV: Quantization-Aware ResNet VAE for Lossy Image Compression**
     - Technical report [[arXiv](https://arxiv.org/abs/2302.08899)]
+    - Abstract: improved version of QRes-VAE. Variable-rate, faster decoding, better performance.
     - Code at [lossy-vae/lvae/models/qarv](lvae/models/qarv)
 
 
