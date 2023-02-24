@@ -3,7 +3,7 @@ from torch.hub import load_state_dict_from_url
 
 from lvae.models.registry import register_model
 import lvae.models.common as common
-import lvae.models.rd.library as lib
+import lvae.models.rd.model as lib
 
 
 @register_model
@@ -70,8 +70,7 @@ def rd_model_base(lmb_range=(4,2048), pretrained=False):
         msd = torch.load(pretrained)['model']
         model.load_state_dict(msd)
     elif pretrained:
-        raise NotImplementedError()
-        url = 'https://huggingface.co/duanzh0/my-model-weights/resolve/main/qarv_base-dec12-2022.pt'
+        url = 'https://huggingface.co/duanzh0/my-model-weights/resolve/main/rd_model_base-200k-feb14-2023.pt'
         msd = load_state_dict_from_url(url)['model']
         model.load_state_dict(msd)
     return model

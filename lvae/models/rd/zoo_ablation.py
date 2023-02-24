@@ -3,7 +3,7 @@ from torch.hub import load_state_dict_from_url
 
 from lvae.models.registry import register_model
 import lvae.models.common as common
-import lvae.models.rd.library as lib
+import lvae.models.rd.model as lib
 
 
 @register_model
