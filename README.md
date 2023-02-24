@@ -25,7 +25,7 @@ Code is under active development, and the API is subject to change.
 *BD-rate is w.r.t. [VTM 18.0](https://vcgit.hhi.fraunhofer.de/jvet/VVCSoftware_VTM/-/tree/VTM-18.0), averaged on three common test sets (Kodak, Tecnick TESTIMAGES, and CLIC 2022 test set).
 
 
-## Implemented Methods - Pre-Trained Models and Training Scripts Available
+## Implemented Methods - Pre-Trained Models Available
 - **Lossy Image Compression with Quantized Hierarchical VAEs** [[arXiv](https://arxiv.org/abs/2208.13056)]
     - Published at WACV 2023,[ ***Best Algorithms Paper Award***](https://wacv2023.thecvf.com/node/174)
     - [Abstract]: a 12-layer VAE model named QRes-VAE. Good compression performance.
