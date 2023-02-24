@@ -24,12 +24,11 @@ class ImageDataset(Dataset):
         return im
 
 
-def get_dateset(name: str, transform_cfg: str=None) -> Dataset:
-    """ get image dataset from name
+def get_transform(transform_cfg: str):
+    """ get image transform from config str
 
     Args:
-        name (str): dataset name, see functions above
-        transform_cfg (str, optional): config, example: 'crop=256,hflip=True'
+        transform_cfg (str): config, example: 'crop=256,hflip=True'
     """
     # make input transform
     transform = []
@@ -44,9 +43,24 @@ def get_dateset(name: str, transform_cfg: str=None) -> Dataset:
             transform.append(t)
     transform.append(tv.transforms.ToTensor())
     transform = tv.transforms.Compose(transform)
+    return transform
 
+
+def get_dateset(name: str, transform_cfg: str=None) -> Dataset:
+    """ get image dataset from name
+
+    Args:
+        name (str): dataset name, see functions above
+        transform_cfg (str, optional): config, example: 'crop=256,hflip=True'
+    """
     # find dataset root, and initialize dataset
-    dataset = ImageDataset(root=known_datasets.get(name, name), transform=transform)
+    dataset = ImageDataset(root=known_datasets.get(name, name), transform=get_transform(transform_cfg))
+    return dataset
+
+
+def get_cls_dataset(name: str, transform_cfg: str=None):
+    root = known_datasets.get(name, name) # find dataset root
+    dataset = tv.datasets.ImageFolder(root=root, transform=get_transform(transform_cfg))
     return dataset
 
 
