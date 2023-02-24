@@ -8,31 +8,44 @@ TBD
 
 ## Install
 **Requirements**:
-- Python, `pytorch>=1.9`, `tqdm`, `compressai` ([link](https://github.com/InterDigitalInc/CompressAI)), `timm>=0.5.4` ([link](https://github.com/rwightman/pytorch-image-models)).
+- Python
+- PyTorch >= 1.9 : https://pytorch.org/get-started/locally
+- tqdm : `conda install tqdm`
+- CompressAI : https://github.com/InterDigitalInc/CompressAI
+- **timm >= 0.8.0** : https://github.com/huggingface/pytorch-image-models
 
 **Download and Install**:
 1. Download the repository;
 2. Modify the dataset paths in `lossy-vae/lvae/paths.py`.
-3. [Optional, needed for using scripts in `lossy-vae/scripts`] pip install the repository in development mode:
+3. [Optional] pip install the repository in development mode:
 ```
 cd /pasth/to/lossy-vae
 python -m pip install -e .
 ```
 
-## Datasets Download
-**COCO**
-1. Download the COCO dataset `2017 Train images [118K/18GB]` from https://cocodataset.org/#download
-2. Unzip the images anywhere, e.g., to `/path/to/coco/train2017`
-3. Edit `lossy-vae/lvae/paths.py` such that `known_datasets['coco-train2017'] = '/path/to/coco/train2017'`
-
-**Kodak**
-1. Download the 24 Kodak images from http://r0k.us/graphics/kodak
-2. Put them anywhere, e.g., at `/path/to/kodak`
-3. Edit `lossy-vae/lvae/paths.py` such that `known_datasets['kodak'] = '/path/to/kodak'`
-
 
 ## Usage
 Detailed usage is provided in each model's folder
+
+
+## Prepare Datasets for Training and Evaluation
+**COCO**
+1. Download the COCO dataset "2017 Train images [118K/18GB]" from https://cocodataset.org/#download
+2. Unzip the images anywhere, e.g., at `/path/to/datasets/coco/train2017`
+3. Edit `lossy-vae/lvae/paths.py` such that
+```
+known_datasets['coco-train2017'] = '/path/to/datasets/coco/train2017'
+```
+
+**Kodak** ([link](http://r0k.us/graphics/kodak)),
+**Tecnick TESTIMAGES** ([link](https://testimages.org/)),
+and **CLIC** ([link](http://compression.cc/))
+```
+python scripts/download-dataset.py --name kodak         --datasets_root /path/to/datasets
+                                          clic2022-test
+                                          tecnick
+```
+Then, edit `lossy-vae/lvae/paths.py` such that `known_datasets['kodak'] = '/path/to/datasets/kodak'`, and similarly for other datasets.
 
 
 
