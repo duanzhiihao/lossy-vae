@@ -4,7 +4,7 @@ This repository is still under construction.
 
 ## Implemented Methods
 - **Lossy Image Compression with Quantized Hierarchical VAEs**
-    - **WACV 2023, Best Algorithms Paper Award** [[arXiv](https://arxiv.org/abs/2208.13056)]
+    - WACV 2023, **Best Algorithms Paper Award** [[arXiv](https://arxiv.org/abs/2208.13056)]
     - Code coming soon
 - **An Improved Upper Bound on the Rate-Distortion Function of Images**
     - Code at [lossy-vae/lvae/models/rd](lvae/models/rd)
