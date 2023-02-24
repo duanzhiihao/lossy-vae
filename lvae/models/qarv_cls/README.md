@@ -14,7 +14,7 @@ python eval-var-rate.py --model qarv_base --dataset_name kodak --device cuda:0
 python train-var-rate-cls.py --model qarv_cls_test --batch_size 32 --iterations 500_000 --workers 8 --wbmode online
 ```
 Training progress is tracked using `wandb`.
-By default, the run in in the https://wandb.ai/home > `default` project > `var-rate-exp` group.
+By default, the run in in the https://wandb.ai/home > `project0` project > `group0` group.
 
 ### Single GPU training, using the GPU with id=2
 ```

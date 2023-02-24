@@ -25,7 +25,7 @@ def parse_args():
     parser.add_argument('--wbmode',     type=str,  default='disabled')
     parser.add_argument('--name',       type=str,  default=None)
     # model setting
-    parser.add_argument('--model',      type=str,  default='qarv_cls_b')
+    parser.add_argument('--model',      type=str,  default='qarv_cls_test')
     parser.add_argument('--model_args', type=str,  default='')
     # resume setting
     parser.add_argument('--resume',     type=str,  default=None)
