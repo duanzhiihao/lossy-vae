@@ -46,6 +46,10 @@ def deconv(in_ch, out_ch, kernel_size=5, stride=2, zero_weights=False):
 
 
 class Conv1331Block(nn.Module):
+    """ Adapted from VDVAE (https://github.com/openai/vdvae)
+    - Paper: Very Deep VAEs Generalize Autoregressive Models and Can Outperform Them on Images
+    - arxiv: https://arxiv.org/abs/2011.10650
+    """
     def __init__(self, in_ch, hidden_ch=None, out_ch=None, use_3x3=True, zero_last=False):
         super().__init__()
         out_ch = out_ch or in_ch
@@ -68,45 +72,6 @@ class Conv1331Block(nn.Module):
         xhat = self.c4(tnf.gelu(xhat))
         out = (x + xhat) if self.residual else xhat
         return out
-
-
-class MyConvNeXtBlock(nn.Module):
-    def __init__(self, dim, out_dim=None, kernel_size=7, mlp_ratio=2,
-                 residual=True, ls_init_value=1e-6):
-        super().__init__()
-        # depthwise conv
-        pad = (kernel_size - 1) // 2
-        self.conv_dw = nn.Conv2d(dim, dim, kernel_size=kernel_size, padding=pad, groups=dim)
-        # layer norm
-        self.norm = nn.LayerNorm(dim, eps=1e-6)
-        self.norm.affine = True
-        # MLP
-        hidden = int(mlp_ratio * dim)
-        out_dim = out_dim or dim
-        from timm.models.layers.mlp import Mlp
-        self.mlp = Mlp(dim, hidden_features=hidden, out_features=out_dim, act_layer=nn.GELU)
-        # layer scaling
-        if ls_init_value >= 0:
-            self.gamma = nn.Parameter(torch.ones(1, out_dim, 1, 1) * float(ls_init_value))
-        else:
-            self.gamma = None
-        self.residual = residual
-
-    def forward(self, x):
-        shortcut = x
-        # depthwise conv
-        x = self.conv_dw(x)
-        # layer norm + MLP
-        x = x.permute(0, 2, 3, 1).contiguous()
-        x = self.norm(x)
-        x = self.mlp(x)
-        x = x.permute(0, 3, 1, 2).contiguous()
-        # scaling
-        if self.gamma is not None:
-            x = x.mul(self.gamma)
-        if self.residual:
-            x = x + shortcut
-        return x
 
 
 class BottomUpEncoder(nn.Module):

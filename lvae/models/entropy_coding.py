@@ -32,6 +32,17 @@ def _sanity_check_scale_table(scale_table):
 
 
 def gaussian_log_prob_mass(mean, scale, x, bin_size=1.0, prob_clamp=1e-6):
+    """ Compute log(P) of a "quantized" Normal(`mean`, `scale`) distribution evaluated at `x`,
+    where P = cdf(`x` + 0.5*bin_size) - cdf(`x` - 0.5*bin_size).
+
+    Args:
+        mean        (Tensor): mean of the Gaussian
+        scale       (Tensor): scale (standard deviation) of the Gaussian
+        x           (Tensor): the quantized Gaussian is evaluated at `x`
+        bin_size    (float):  quantization bin size
+        prob_clamp  (float):  when prob < prob_clamp, use approximation \
+            to improve numerical stability.
+    """
     mean, scale, x = _to_float32(mean, scale, x)
     assert scale.min() > 0, f'invalid scale value = {scale.min()}'
     log_prob = _safe_log_prob_mass(td.Normal(mean, scale), x, bin_size, prob_clamp)
