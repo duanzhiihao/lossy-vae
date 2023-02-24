@@ -30,13 +30,13 @@ Code is under active development, and the API is subject to change.
     - Published at WACV 2023,[ ***Best Algorithms Paper Award***](https://wacv2023.thecvf.com/node/174)
     - [Abstract]: a 12-layer VAE model named QRes-VAE. Good compression performance.
     - [Code]\: [lossy-vae/lvae/models/qres](lvae/models/qres)
-- **An Improved Upper Bound on the Rate-Distortion Function of Images**
-    - [Abstract]: a 15-layer VAE model used to estimate the information R(D) function. Shows that -30% BD-rate w.r.t. VTM is theoretically achievable.
-    - [Code]\: [lossy-vae/lvae/models/rd](lvae/models/rd)
 - **QARV: Quantization-Aware ResNet VAE for Lossy Image Compression** [[arXiv](https://arxiv.org/abs/2302.08899)]
     - Technical report
     - [Abstract]: improved version of QRes-VAE. Variable-rate, faster decoding, better performance.
     - [Code]\: [lossy-vae/lvae/models/qarv](lvae/models/qarv)
+- **An Improved Upper Bound on the Rate-Distortion Function of Images**
+    - [Abstract]: a 15-layer VAE model used to estimate the information R(D) function. Shows that -30% BD-rate w.r.t. VTM is theoretically achievable.
+    - [Code]\: [lossy-vae/lvae/models/rd](lvae/models/rd)
 
 
 ## Install
