@@ -27,15 +27,16 @@ Code is under active development, and the API is subject to change.
 
 ## Implemented Methods
 - **Lossy Image Compression with Quantized Hierarchical VAEs**
-    - WACV 2023, ***Best Algorithms Paper Award*** [[arXiv](https://arxiv.org/abs/2208.13056)]
-    - Abstract: a 12-layer VAE model named QRes-VAE. Good compression performance.
-    - Code at [lossy-vae/lvae/models/qres](lvae/models/qres)
+    - Published at WACV 2023, ***Best Algorithms Paper Award*** [[arXiv](https://arxiv.org/abs/2208.13056)]
+    - [Abstract]: a 12-layer VAE model named QRes-VAE. Good compression performance.
+    - [Code]\: [lossy-vae/lvae/models/qres](lvae/models/qres)
 - **An Improved Upper Bound on the Rate-Distortion Function of Images**
-    - Code at [lossy-vae/lvae/models/rd](lvae/models/rd)
+    - [Abstract]: a 15-layer VAE model used to estimate the information R(D) function. Shows that -30% BD-rate w.r.t. VTM is theoretically achievable.
+    - [Code]\: [lossy-vae/lvae/models/rd](lvae/models/rd)
 - **QARV: Quantization-Aware ResNet VAE for Lossy Image Compression**
     - Technical report [[arXiv](https://arxiv.org/abs/2302.08899)]
-    - Abstract: improved version of QRes-VAE. Variable-rate, faster decoding, better performance.
-    - Code at [lossy-vae/lvae/models/qarv](lvae/models/qarv)
+    - [Abstract]: improved version of QRes-VAE. Variable-rate, faster decoding, better performance.
+    - [Code]\: [lossy-vae/lvae/models/qarv](lvae/models/qarv)
 
 
 ## Install
