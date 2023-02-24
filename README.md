@@ -3,12 +3,12 @@
 This repository is still under construction.
 
 ## Implemented Methods
-- Lossy Image Compression with Quantized Hierarchical VAEs
+- **Lossy Image Compression with Quantized Hierarchical VAEs**
     - **WACV 2023, Best Algorithms Paper Award** [[arXiv](https://arxiv.org/abs/2208.13056)]
     - Code coming soon
-- An Improved Upper Bound on the Rate-Distortion Function of Images
+- **An Improved Upper Bound on the Rate-Distortion Function of Images**
     - Code at [lossy-vae/lvae/models/rd](lvae/models/rd)
-- QARV: Quantization-Aware ResNet VAE for Lossy Image Compression
+- **QARV: Quantization-Aware ResNet VAE for Lossy Image Compression**
     - Technical report [[arXiv](https://arxiv.org/abs/2302.08899)]
     - Code at [lossy-vae/lvae/models/qarv](lvae/models/qarv)
 
