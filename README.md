@@ -27,7 +27,7 @@ Code is under active development, and the API is subject to change.
 
 ## Implemented Methods - Pre-Trained Models and Training Scripts Available
 - **Lossy Image Compression with Quantized Hierarchical VAEs** [[arXiv](https://arxiv.org/abs/2208.13056)]
-    - Published at WACV 2023, ***Best Algorithms Paper Award***
+    - Published at WACV 2023,[ ***Best Algorithms Paper Award***](https://wacv2023.thecvf.com/node/174)
     - [Abstract]: a 12-layer VAE model named QRes-VAE. Good compression performance.
     - [Code]\: [lossy-vae/lvae/models/qres](lvae/models/qres)
 - **An Improved Upper Bound on the Rate-Distortion Function of Images**
