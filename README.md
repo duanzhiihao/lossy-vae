@@ -4,7 +4,7 @@ This repository contains authors' implementation of several deep hierarchical VA
 Code is under active development, and the API is subject to change.
 
 ### Features
-**Progressive coding:** our models learns *a deep hierarchy of* latent variables. It compresses images in a *coarse-to-fine* fashion. This feature comes from the hierarchical nature of ResNet VAEs.
+**Progressive coding:** our models learns *a deep hierarchy of* latent variables and compress/decompress images in a *coarse-to-fine* fashion. This feature comes from the hierarchical nature of ResNet VAEs.
 <p align="center">
   <img src="https://user-images.githubusercontent.com/24869582/187014268-405851e8-b8a5-47e3-b28d-7b5d4ac20316.png" width="756" height="300">
 </p>
