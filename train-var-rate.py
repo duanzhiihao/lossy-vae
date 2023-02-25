@@ -300,7 +300,9 @@ def read_rd_stats_from_json(json_path):
 
 def get_anchor_stats(dataset_name):
     anchor_paths = {
-        'kodak': 'results/kodak-vtm-12.1-compressai.json'
+        'kodak': 'results/kodak/kodak-vtm18.0.json',
+        'tecnick-rgb-1200': 'results/tecnick-rgb-1200/tecnick-rgb-1200-vtm18.0.json',
+        'clic2022-test': 'results/clic2022-test/clic2022-test-vtm18.0.json'
     }
     anchor_stats = read_rd_stats_from_json(anchor_paths[dataset_name])
     return anchor_stats
