@@ -1,3 +1,4 @@
+from pathlib import Path
 from collections import defaultdict, OrderedDict
 import json
 import argparse
@@ -9,13 +10,13 @@ from lvae.evaluation import imcoding_evaluate
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--model',        type=str,  default='qres34m')
-    parser.add_argument('--lambdas',      type=int,  default=[16, 32, 64, 128, 256, 512, 1024, 2048], nargs='+')
-    parser.add_argument('--dataset_name', type=str,  default='kodak')
-    parser.add_argument('--device',       type=str,  default='cuda:0')
+    parser.add_argument('--model',   type=str,  default='qres34m')
+    parser.add_argument('--lambdas', type=int,  default=[16, 32, 64, 128, 256, 512, 1024, 2048], nargs='+')
+    parser.add_argument('--dataset', type=str,  default='kodak')
+    parser.add_argument('--device',  type=str,  default='cuda:0')
     args = parser.parse_args()
 
-    save_json_path = args.save_json or f'results/{args.dataset}-{args.model}.json'
+    save_json_path = Path(f'runs/results/{args.dataset}-{args.model}.json')
     if not save_json_path.parent.is_dir():
         print(f'Creating {save_json_path.parent} ...')
         save_json_path.parent.mkdir(parents=True)
@@ -23,7 +24,7 @@ def main():
     all_lmb_results = defaultdict(list)
     for lmb in args.lambdas:
         # initialize model
-        model = get_model(args.model, lmb=lmb, pre_trained=True)
+        model = get_model(args.model, lmb=lmb, pretrained=True)
 
         print(f'Evaluating lmb={lmb} ...')
         model.compress_mode()
@@ -42,11 +43,11 @@ def main():
     json_data = OrderedDict()
     json_data['name'] = args.model
     json_data['lambdas'] = args.lambdas
-    json_data['test-set'] = args.dataset_name
+    json_data['test-set'] = args.dataset
     json_data['results'] = all_lmb_results
     with open(save_json_path, 'w') as f:
         json.dump(json_data, fp=f, indent=4)
-    print(f'\nSaved results to {save_json_path} \n')
+    print(f'Saved results to {save_json_path} \n')
 
     # final print
     for k, vlist in all_lmb_results.items():
