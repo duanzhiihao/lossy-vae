@@ -55,10 +55,10 @@ def evaluate_model(model, lmb, dataset_name):
 @torch.no_grad()
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('-m', '--model',        type=str,   default='rd_model_j')
+    parser.add_argument('-m', '--model',        type=str,   default='rd_model_base')
     parser.add_argument('-a', '--model_args',   type=str,   default='pretrained=True')
     parser.add_argument('-l', '--lmb_range',    type=float, default=[4, 2048], nargs='+')
-    parser.add_argument('-s', '--steps',        type=int,   default=8)
+    parser.add_argument('-s', '--steps',        type=int,   default=16)
     parser.add_argument('-n', '--dataset_name', type=str,   default='tecnick-rgb-1200')
     parser.add_argument('-d', '--device',       type=str,   default='cuda:0')
     args = parser.parse_args()
@@ -70,10 +70,6 @@ def main():
     model.eval()
 
     start, end = args.lmb_range
-    # p = 3.0
-    # lambdas = torch.linspace(
-    #     math.pow(start,1/p), math.pow(end,1/p), steps=args.steps
-    # ).pow(p).tolist()
     lambdas = torch.linspace(
         math.log(start), math.log(end), steps=args.steps
     ).exp().tolist()
