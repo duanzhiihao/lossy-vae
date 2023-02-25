@@ -163,10 +163,23 @@ from timm.models.convnext import ConvNeXtBlock
 class MyConvNeXtBlock(ConvNeXtBlock):
     def __init__(self, dim, mlp_ratio=2, **kwargs):
         super().__init__(dim, mlp_ratio=mlp_ratio, **kwargs)
-        # p = (kernel_size - 1) // 2
-        # self.conv_dw = nn.Conv2d(dim, dim, kernel_size=kernel_size, padding=p, groups=dim)
         self.norm.affine = True # this variable is useless. just a workaround for flops computation
 
+    def forward(self, x):
+        shortcut = x
+        x = self.conv_dw(x)
+        if self.use_conv_mlp:
+            x = self.norm(x)
+            x = self.mlp(x)
+        else:
+            x = x.permute(0, 2, 3, 1).contiguous()
+            x = self.norm(x)
+            x = self.mlp(x)
+            x = x.permute(0, 3, 1, 2).contiguous()
+        if self.gamma is not None:
+            x = x.mul(self.gamma.reshape(1, -1, 1, 1))
+        x = self.drop_path(x) + shortcut
+        return x
 
 class MyConvNeXtPatchDown(MyConvNeXtBlock):
     def __init__(self, in_ch, out_ch, down_rate=2, mlp_ratio=2, kernel_size=7):

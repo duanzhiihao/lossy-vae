@@ -13,7 +13,7 @@ def main():
     parser.add_argument('--model',   type=str,  default='qres34m')
     parser.add_argument('--lambdas', type=int,  default=[16, 32, 64, 128, 256, 512, 1024, 2048], nargs='+')
     parser.add_argument('--dataset', type=str,  default='kodak')
-    parser.add_argument('--device',  type=str,  default='cuda:4')
+    parser.add_argument('--device',  type=str,  default='cuda:0')
     args = parser.parse_args()
 
     save_json_path = Path(f'runs/results/{args.dataset}-{args.model}.json')

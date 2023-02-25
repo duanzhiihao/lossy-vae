@@ -14,6 +14,16 @@ from lvae.utils.coding import crop_divisible_by
 
 @torch.no_grad()
 def imcoding_evaluate(model: torch.nn.Module, dataset: str):
+    """ Evaluate image coding performance on a dataset, with entropy coding.
+
+    Args:
+        model (torch.nn.Module): pytorch model. \
+            Need to have `compress_file` and `decompress_file` methods.
+        dataset (str): dataset name or path to the dataset.
+
+    Returns:
+        dict[str -> float]: results, including bpp, mse, psnr.
+    """
     assert hasattr(model, 'compress_file')
     assert hasattr(model, 'decompress_file')
 
@@ -44,6 +54,45 @@ def imcoding_evaluate(model: torch.nn.Module, dataset: str):
             'mse':  float(mse),
             'psnr': float(psnr)
         }
+
+        # accumulate stats
+        for k,v in stats.items():
+            all_image_stats[k].update(v)
+        # logging
+        msg = ', '.join([f'{k}={v:.3f}' for k,v in stats.items()])
+        pbar.set_description(f'image {impath.stem}: {msg}')
+
+    # average over all images
+    results = {k: meter.avg for k,meter in all_image_stats.items()}
+    return results
+
+
+@torch.no_grad()
+def image_self_evaluate(model: torch.nn.Module, dataset: str):
+    """ Evaluate the model on a dataset with the model's `forward()` function.
+    Typically, no entropy coding is used.
+
+    Args:
+        model (torch.nn.Module): pytorch model
+        dataset (str): dataset name or path to the dataset.
+
+    Returns:
+        dict[str -> float]: results
+    """
+    device = next(model.parameters()).device
+    # find images
+    root = known_datasets.get(dataset, Path(dataset))
+    img_paths = sorted(root.rglob('*.*'))
+    # evaluate on all images and average the results
+    pbar = tqdm(img_paths)
+    all_image_stats = defaultdict(AverageMeter)
+    for impath in pbar:
+        img = Image.open(impath)
+        if hasattr(model, 'max_stride'):
+            img = crop_divisible_by(img, div=model.max_stride)
+        im = tvf.to_tensor(img).unsqueeze_(0).to(device=device)
+        stats = model(im)
+        assert isinstance(stats, dict), f'{type(stats)=}. expected a dict.'
 
         # accumulate stats
         for k,v in stats.items():
