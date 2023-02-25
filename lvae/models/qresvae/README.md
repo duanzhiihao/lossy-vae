@@ -48,6 +48,7 @@ A larger `lmb` produces a higher bit rate and lower distortion (ie, better recon
 import lvae
 
 model = lvae.get_model('qres34m', lmb=16, pretrained=True)
+model.eval()
 model.compress_mode(True) # initialize entropy encoder
 
 # compress
@@ -69,7 +70,7 @@ im = model.decompress_file('path/to/compressed.bin')
 ## Evaluate lossy compression efficiency
 - Rate-distortion curve: `python eval-fix-rate.py --model qres34m --dataset kodak --device cuda:0`
     - Supported models: `qres34m`, `qres17m`
-    - Supported datasets: `kodak`, `tecnick-rgb-1200`, `clic2022-test`
+    - `kodak` can be replaced by any other dataset name in `lvae.paths.known_datasets`
 - Estimate end-to-end flops: [scripts\qresvae\estimate-flops.ipynb](../../../scripts/qresvae/estimate-flops.ipynb)
 
 

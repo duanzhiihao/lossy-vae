@@ -22,7 +22,7 @@ Code is under active development, and the API is subject to change.
 
 *Time is the latency to encode/decode a 512x768 image, averaged over 24 Kodak images. Tested in plain PyTorch (v1.13 + CUDA 11.7) code, ie, no mixed-precision, torchscript, ONNX/TensorRT, etc. \
 *CPU is Intel 10700k. \
-*BD-rate is w.r.t. [VTM 18.0](https://vcgit.hhi.fraunhofer.de/jvet/VVCSoftware_VTM/-/tree/VTM-18.0), averaged on three common test sets (Kodak, Tecnick TESTIMAGES, and CLIC 2022 test set).
+*BD-rate is w.r.t. [VTM 18.0](https://vcgit.hhi.fraunhofer.de/jvet/VVCSoftware_VTM/-/tree/VTM-18.0), averaged on three common test sets (Kodak, Tecnick TESTIMAGES, and CLIC 2022 test set). **Lower is better.**
 
 
 ## Implemented Methods - Pre-Trained Models Available
@@ -58,7 +58,27 @@ python -m pip install -e .
 
 
 ## Usage
-Detailed usage is provided in each model's folder
+### Compress images using a pre-trained model
+Load a pre-trained model:
+```python
+from lvae import get_model
+model = get_model('qarv_base', pretrained=True)
+```
+
+Encode an image:
+```python
+model.compress_file('/path/to/image.png', '/path/to/compressed.bits')
+```
+
+Decode an image:
+```python
+im = model.decompress_file('/path/to/compressed.bits')
+# im is a torch.Tensor of shape (1, 3, H, W). RGB. pixel values in [0, 1].
+```
+
+### Training and evaluation
+Training and evaluation methods vary from model to model. \
+Detailed training/evaluation instructions are provided in each model's subfolder (see the section [Implemented Methods](#implemented-methods---pre-trained-models-available) above for the subfolders).
 
 
 ## Prepare Datasets for Training and Evaluation
@@ -79,27 +99,6 @@ python scripts/download-dataset.py --name kodak         --datasets_root /path/to
                                           tecnick
 ```
 Then, edit `lossy-vae/lvae/paths.py` such that `known_datasets['kodak'] = '/path/to/datasets/kodak'`, and similarly for other datasets.
-
-
-
-<!-- ## Evaluation
-TBD
-
-## Training
-Training is done by minimizing the `stats['loss']` term returned by the model's `forward()` function.
-
-### Data preparation
-We used the COCO dataset for training, and the Kodak images for periodic evaluation.
-- COCO: https://cocodataset.org
-- Kodak: http://r0k.us/graphics/kodak
-
-### Single GPU training
-TBD
-
-### Multi-GPU training
-```
-torchrun --nproc_per_node 2 train-var-rate.py --model qarv_base --model_args lmb_range=[16,2048] --batch_size 16 --iterations 2_000_000 --workers 6 --wbproject topic --wbgroup exp-lmb16-1024 --wbmode online
-``` -->
 
 
 ## License
