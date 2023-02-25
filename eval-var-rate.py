@@ -6,7 +6,7 @@ import math
 import torch
 
 from lvae.models.registry import get_model
-from lvae.evaluation.image import imcoding_evaluate
+from lvae.evaluation import imcoding_evaluate
 
 
 @torch.no_grad()
@@ -58,6 +58,7 @@ def main():
     json_data['results'] = all_lmb_stats
     with open(save_json_path, 'w') as f:
         json.dump(json_data, fp=f, indent=4)
+    print(f'\nSaved results to {save_json_path} \n')
     # print results
     for k, vlist in all_lmb_stats.items():
         vlist_str = ', '.join([f'{v:.12f}'[:7] for v in vlist])

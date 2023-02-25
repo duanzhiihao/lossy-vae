@@ -2,6 +2,7 @@ import torch
 from torch.hub import load_state_dict_from_url
 
 from lvae.models.registry import register_model
+import lvae.models.common as common
 import lvae.models.qresvae.model as qres
 
 
@@ -29,15 +30,15 @@ def qres34m(lmb=32, pretrained=False):
     ]
     cfg['dec_blocks'] = [
         *[qres.QLatentBlockX(ch*4, z_dims[0], kernel_size=1) for _ in range(dec_nums[0])], # 1x1
-        qres.subpix_conv(ch*4, ch*4, up_rate=2),
+        common.patch_upsample(ch*4, ch*4, rate=2),
         *[qres.QLatentBlockX(ch*4, z_dims[1], kernel_size=3) for _ in range(dec_nums[1])], # 2x2
-        qres.subpix_conv(ch*4, ch*4, up_rate=2),
+        common.patch_upsample(ch*4, ch*4, rate=2),
         *[qres.QLatentBlockX(ch*4, z_dims[2], kernel_size=5) for _ in range(dec_nums[2])], # 4x4
-        qres.subpix_conv(ch*4, ch*4, up_rate=2),
+        common.patch_upsample(ch*4, ch*4, rate=2),
         *[qres.QLatentBlockX(ch*4, z_dims[3], kernel_size=7) for _ in range(dec_nums[3])], # 8x8
-        qres.subpix_conv(ch*4, ch*2, up_rate=2),
+        common.patch_upsample(ch*4, ch*2, rate=2),
         *[qres.QLatentBlockX(ch*2, z_dims[4], kernel_size=7) for _ in range(dec_nums[4])], # 16x16
-        qres.subpix_conv(ch*2, im_channels, up_rate=4)
+        common.patch_upsample(ch*2, im_channels, rate=4)
     ]
     cfg['out_net'] = qres.MSEOutputNet(mse_lmb=lmb)
 
@@ -83,18 +84,18 @@ def qres34m_lossless(pretrained=False):
     ]
     cfg['dec_blocks'] = [
         *[qres.QLatentBlockX(ch*4, z_dims[0], kernel_size=1) for _ in range(dec_nums[0])], # 1x1
-        qres.subpix_conv(ch*4, ch*4, up_rate=2),
+        common.patch_upsample(ch*4, ch*4, rate=2),
         *[qres.QLatentBlockX(ch*4, z_dims[1], kernel_size=3) for _ in range(dec_nums[1])], # 2x2
-        qres.subpix_conv(ch*4, ch*4, up_rate=2),
+        common.patch_upsample(ch*4, ch*4, rate=2),
         *[qres.QLatentBlockX(ch*4, z_dims[2], kernel_size=5) for _ in range(dec_nums[2])], # 4x4
-        qres.subpix_conv(ch*4, ch*4, up_rate=2),
+        common.patch_upsample(ch*4, ch*4, rate=2),
         *[qres.QLatentBlockX(ch*4, z_dims[3], kernel_size=7) for _ in range(dec_nums[3])], # 8x8
-        qres.subpix_conv(ch*4, ch*2, up_rate=2),
+        common.patch_upsample(ch*4, ch*2, rate=2),
         *[qres.QLatentBlockX(ch*2, z_dims[4], kernel_size=7) for _ in range(dec_nums[4])], # 16x16
     ]
     cfg['out_net'] = qres.GaussianNLLOutputNet(
-        conv_mean=qres.subpix_conv(ch*2, im_channels, up_rate=4),
-        conv_scale=qres.subpix_conv(ch*2, im_channels, up_rate=4)
+        conv_mean=common.patch_upsample(ch*2, im_channels, rate=4),
+        conv_scale=common.patch_upsample(ch*2, im_channels, rate=4)
     )
 
     cfg['im_shift'] = -0.4546259594901961
@@ -143,7 +144,7 @@ def qres17m(lmb=8, pretrained=True):
         *[qres.QLatentBlockX(ch*4, z_dims[2], kernel_size=5) for _ in range(dec_nums[2])], # 8x8
         qres.deconv(ch*4, ch*2),
         *[qres.QLatentBlockX(ch*2, z_dims[3], kernel_size=7) for _ in range(dec_nums[3])], # 16x16
-        qres.subpix_conv(ch*2, im_channels, up_rate=4)
+        common.patch_upsample(ch*2, im_channels, rate=4)
     ]
     cfg['out_net'] = qres.MSEOutputNet(mse_lmb=lmb)
 
