@@ -24,6 +24,12 @@ This means that existing codecs are far from optimum.
 
 *BD-rate is w.r.t. VTM 18.0. Lower BD-rate is better.
 
+**Load pre-trained models by**
+```
+import lvae
+
+model = lvae.get_model('rd_model_base', pretrained=True)
+```
 
 <!-- ## Usage
 TBD -->

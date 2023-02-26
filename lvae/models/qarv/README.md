@@ -19,15 +19,19 @@ QARV (Quantization-Aware ResNet VAE) is an improved version of QRes-VAE.
 
 *BD-rate is w.r.t. VTM 18.0, lower is better.
 
+**Load pre-trained models by**
+```
+import lvae
+
+model = lvae.get_model('qarv_base', pretrained=True)
+```
 
 ## Usage
 ### Image compression
 ```
-import lvae
-
-model = lvae.get_model('qarv_base', lmb=16, pretrained=True)
+model = lvae.get_model('qarv_base', pretrained=True)
 model.eval()
-model.compress_mode(True) # initialize entropy encoder
+model.compress_mode(True) # initialize entropy coding
 
 # compress
 model.compress_file('path/to/image.png', 'path/to/compressed.bin')
