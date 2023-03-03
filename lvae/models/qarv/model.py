@@ -205,9 +205,9 @@ class VRLatentBlockMedium(VRLatentBlockBase):
         self.posterior  = common.conv_k3s1(width, zdim)
         self.prior      = common.conv_k1s1(width, zdim*2)
         self.z_proj = nn.Sequential(
-            common.conv_k3s1(zdim, zdim*2),
+            common.conv_k3s1(zdim, zdim*4),
             nn.GELU(),
-            common.conv_k1s1(zdim*2, width)
+            common.conv_k1s1(zdim*4, width)
         )
 
         self.discrete_gaussian = entropy_coding.DiscretizedGaussian()
