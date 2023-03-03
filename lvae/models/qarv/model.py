@@ -206,6 +206,7 @@ class VRLatentBlockMedium(VRLatentBlockBase):
         self.prior      = common.conv_k1s1(width, zdim*2)
         self.z_proj = nn.Sequential(
             common.conv_k3s1(zdim, zdim*2),
+            nn.GELU(),
             common.conv_k1s1(zdim*2, width)
         )
 
