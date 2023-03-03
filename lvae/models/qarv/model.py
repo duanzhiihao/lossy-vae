@@ -190,6 +190,44 @@ class VRLatentBlockBase(nn.Module):
         self.discrete_gaussian.update()
 
 
+class VRLatentBlockMedium(VRLatentBlockBase):
+    def __init__(self, width, zdim, embed_dim, enc_width=None, **kwargs):
+        super(VRLatentBlockBase, self).__init__()
+        self.in_channels  = width
+        self.out_channels = width
+
+        self.resnet_front = ConvNeXtBlockAdaLN(width, embed_dim, **kwargs)
+        self.resnet_end   = ConvNeXtBlockAdaLN(width, embed_dim, **kwargs)
+        self.posterior0 = ConvNeXtBlockAdaLN(enc_width, embed_dim, **kwargs)
+        self.posterior2 = ConvNeXtBlockAdaLN(width, embed_dim, **kwargs)
+        enc_width = enc_width or width
+        self.post_merge = common.conv_k1s1(width + enc_width, width)
+        self.posterior  = common.conv_k3s1(width, zdim)
+        self.prior      = common.conv_k1s1(width, zdim*2)
+        self.z_proj = nn.Sequential(
+            common.conv_k3s1(zdim, zdim*2),
+            common.conv_k1s1(zdim*2, width)
+        )
+
+        self.discrete_gaussian = entropy_coding.DiscretizedGaussian()
+        self.is_latent_block = True
+
+    def transform_posterior(self, feature, enc_feature, lmb_embedding):
+        """ posterior q(z_i | z_<i, x)
+
+        Args:
+            feature     (torch.Tensor): feature map
+            enc_feature (torch.Tensor): feature map
+        """
+        assert feature.shape[2:4] == enc_feature.shape[2:4]
+        enc_feature = self.posterior0(enc_feature, lmb_embedding)
+        merged = torch.cat([feature, enc_feature], dim=1)
+        merged = self.post_merge(merged)
+        merged = self.posterior2(merged, lmb_embedding)
+        qm = self.posterior(merged)
+        return qm
+
+
 class VRLatentBlockSmall(VRLatentBlockBase):
     def __init__(self, width, zdim, embed_dim, enc_width=None, **kwargs):
         super(VRLatentBlockBase, self).__init__()
@@ -335,10 +373,13 @@ class VariableRateLossyVAE(nn.Module):
 
     def sample_lmb(self, n):
         low, high = self.lmb_range # original lmb space, 16 to 1024
-        p = 3.0
-        low, high = math.pow(low, 1/p), math.pow(high, 1/p) # transformed space
+        low, high = math.log(low), math.log(high) # transformed space
         transformed_lmb = low + (high-low) * torch.rand(n, device=self._dummy.device)
-        lmb = torch.pow(transformed_lmb, exponent=p)
+        lmb = torch.exp(transformed_lmb)
+        # p = 3.0
+        # low, high = math.pow(low, 1/p), math.pow(high, 1/p) # transformed space
+        # transformed_lmb = low + (high-low) * torch.rand(n, device=self._dummy.device)
+        # lmb = torch.pow(transformed_lmb, exponent=p)
         return lmb
 
     def expand_to_tensor(self, input_, n):
