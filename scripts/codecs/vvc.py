@@ -118,12 +118,10 @@ def encode_intra(input_path, input_hw, output_path, quality, input_fmt=444):
         f'--BitstreamFile={Path(output_path).resolve()}',
         f'--SourceWidth={input_hw[1]}',
         f'--SourceHeight={input_hw[0]}',
-        f'--InputBitDepth=8',
         f'--InputChromaFormat={input_fmt}',
         f'--FrameRate=1',
         f'--FramesToBeEncoded=1',
         f'--QP={quality}',
-        # "--ConformanceWindowMode=1",
     ]
     msg, cmd = run_command(cmd)
     return msg, cmd
@@ -163,29 +161,20 @@ def decode_to_yuv_file(bits_path, output_path=None):
         output_path = get_temp_file_path(suffix='.yuv')
     cmd = [
         get_dec_path(),
-        '-b', bits_path.resolve(),
-        '-o', Path(output_path).resolve(),
-        '-d', 8,
+        f'--BitstreamFile={bits_path.resolve()}',
+        f'--ReconFile={Path(output_path).resolve()}',
     ]
     msg, cmd = run_command(cmd)
     return msg, output_path
 
 
 def decode_to_numpy_rgb(bits_path, img_hw):
-    bits_path = Path(bits_path)
-    tmp_yuv_path = get_temp_file_path(suffix='.yuv')
-    cmd = [
-        get_dec_path(),
-        '-b', bits_path.resolve(),
-        '-o', Path(tmp_yuv_path).resolve(),
-        '-d', 8,
-    ]
-    msg, cmd = run_command(cmd)
+    msg, output_yuv_path = decode_to_yuv_file(bits_path)
 
-    rec = np.fromfile(tmp_yuv_path, dtype=np.uint8)
+    rec = np.fromfile(output_yuv_path, dtype=np.uint8)
     rec = rec.reshape(3, img_hw[0], img_hw[1]).transpose((1,2,0))
     rec = cv2.cvtColor(rec, cv2.COLOR_YUV2RGB)
 
-    tmp_yuv_path.unlink()
+    output_yuv_path.unlink()
     return rec
 
