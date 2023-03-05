@@ -11,6 +11,7 @@ import numpy as np
 import cv2
 
 import vvc
+from lvae import known_datasets
 
 
 def green_str(msg: str):
@@ -74,7 +75,7 @@ def main():
     parser.add_argument('-c', '--codec',        type=str, default='vtm18.0')
     parser.add_argument('-d', '--dataset_name', type=str, default='kodak')
     parser.add_argument('-p', '--dataset_path', type=str, default=None)
-    parser.add_argument('-q', '--quality',      type=int, nargs='+', default=list(range(10,51)))
+    parser.add_argument('-q', '--quality',      type=int, nargs='+', default=list(range(15,51)))
     parser.add_argument('-w', '--workers',      type=int, default=2)
     args = parser.parse_args()
 
@@ -86,17 +87,11 @@ def main():
         level=logging.INFO, format= '[%(asctime)s] %(message)s', datefmt='%Y-%b-%d %H:%M:%S'
     )
 
-    default_dataset_paths = {
-        'kodak': 'd:/datasets/kodak',
-    }
-    # get dataset root
-    if args.dataset_path is None:
-        dataset_root = Path(default_dataset_paths[args.dataset_name])
-    else:
-        dataset_root = Path(args.dataset_path)
-    assert dataset_root.is_dir(), f'{dataset_root=} does not exist.'
     logging.info('================================')
+    dataset_root = Path(known_datasets[args.dataset_name])
+    assert dataset_root.is_dir(), f'{dataset_root=} does not exist.'
     logging.info(f'Data set name={args.dataset_name}, data path={args.dataset_path}')
+
     # find all images
     image_paths = sorted(dataset_root.rglob('*.*'))
     logging.info(f'Found {len(image_paths)} images in {dataset_root}.')
@@ -105,7 +100,7 @@ def main():
     all_quality_results_dir = _results_root / f'{args.codec}-{args.dataset_name}'
     all_quality_results_dir.mkdir(parents=True, exist_ok=False)
     final_result_path = _results_root / f'{args.codec}-{args.dataset_name}.json'
-    logging.info(f'Will save individual results to {all_quality_results_dir},',
+    logging.info(f'Will save individual results to {all_quality_results_dir}, ' + \
                  f'and will save overall results to {final_result_path}')
     logging.info('================================')
 
