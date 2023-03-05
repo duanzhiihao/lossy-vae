@@ -87,6 +87,106 @@ class ConvNeXtAdaLNPatchDown(ConvNeXtBlockAdaLN):
         return out
 
 
+class LatentBlockSmall(nn.Module):
+    def __init__(self, width, zdim, enc_width=None, **kwargs):
+        super().__init__()
+        self.in_channels  = width
+        self.out_channels = width
+
+        enc_width = enc_width or width
+        concat_ch = (width * 2) if (enc_width is None) else (width + enc_width)
+        self.resnet_front = common.ConvNeXtBlock(width, **kwargs)
+        self.resnet_end   = common.ConvNeXtBlock(width, **kwargs)
+        self.posterior2   = common.ConvNeXtBlock(width, **kwargs)
+        self.post_merge = common.conv_k1s1(concat_ch, width)
+        self.posterior  = common.conv_k3s1(width, zdim)
+        self.z_proj     = common.conv_k1s1(zdim, width)
+        self.prior      = common.conv_k1s1(width, zdim*2)
+
+        self.discrete_gaussian = entropy_coding.DiscretizedGaussian()
+        self.is_latent_block = True
+
+    def transform_prior(self, feature):
+        """ prior p(z_i | z_<i)
+
+        Args:
+            feature (torch.Tensor): feature map
+        """
+        feature = self.resnet_front(feature)
+        pm, plogv = self.prior(feature).chunk(2, dim=1)
+        plogv = tnf.softplus(plogv + 2.3) - 2.3 # make logscale > -2.3
+        pv = torch.exp(plogv)
+        return feature, pm, pv
+
+    def transform_posterior(self, feature, enc_feature):
+        """ posterior q(z_i | z_<i, x)
+
+        Args:
+            feature     (torch.Tensor): feature map
+            enc_feature (torch.Tensor): feature map
+        """
+        assert feature.shape[2:4] == enc_feature.shape[2:4]
+        merged = torch.cat([feature, enc_feature], dim=1)
+        merged = self.post_merge(merged)
+        merged = self.posterior2(merged)
+        qm = self.posterior(merged)
+        return qm
+
+    def fuse_feature_and_z(self, feature, z):
+        # add the new information carried by z to the feature
+        feature = feature + self.z_proj(z)
+        return feature
+
+    def forward(self, feature, lmb_embedding, enc_feature=None, mode='trainval',
+                get_latent=False, latent=None, t=1.0, strings=None):
+        """ a complicated forward function
+
+        Args:
+            feature     (torch.Tensor): feature map
+            enc_feature (torch.Tensor): feature map
+        """
+        feature, pm, pv = self.transform_prior(feature)
+
+        additional = dict()
+        if mode == 'trainval': # training or validation
+            qm = self.transform_posterior(feature, enc_feature)
+            if self.training: # if training, use additive uniform noise
+                z = qm + torch.empty_like(qm).uniform_(-0.5, 0.5)
+                log_prob = entropy_coding.gaussian_log_prob_mass(pm, pv, x=z, bin_size=1.0, prob_clamp=1e-6)
+                kl = -1.0 * log_prob
+            else: # if evaluation, use residual quantization
+                z, probs = self.discrete_gaussian(qm, scales=pv, means=pm)
+                kl = -1.0 * torch.log(probs)
+            additional['kl'] = kl
+        elif mode == 'sampling':
+            if latent is None: # if z is not provided, sample it from the prior
+                z = pm + pv * torch.randn_like(pm) * t + torch.empty_like(pm).uniform_(-0.5, 0.5) * t
+            else: # if `z` is provided, directly use it.
+                assert pm.shape == latent.shape
+                z = latent
+        elif mode == 'compress': # encode z into bits
+            qm = self.transform_posterior(feature, enc_feature)
+            indexes = self.discrete_gaussian.build_indexes(pv)
+            strings = self.discrete_gaussian.compress(qm, indexes, means=pm)
+            z = self.discrete_gaussian.quantize(qm, mode='dequantize', means=pm)
+            additional['strings'] = strings
+        elif mode == 'decompress': # decode z from bits
+            assert strings is not None
+            indexes = self.discrete_gaussian.build_indexes(pv)
+            z = self.discrete_gaussian.decompress(strings, indexes, means=pm)
+        else:
+            raise ValueError(f'Unknown mode={mode}')
+
+        feature = self.fuse_feature_and_z(feature, z)
+        feature = self.resnet_end(feature)
+        if get_latent:
+            additional['z'] = z.detach()
+        return feature, additional
+
+    def update(self):
+        self.discrete_gaussian.update()
+
+
 class VRLatentBlockBase(nn.Module):
     def __init__(self, width, zdim, embed_dim, enc_width=None, kernel_size=7, mlp_ratio=2):
         super().__init__()
