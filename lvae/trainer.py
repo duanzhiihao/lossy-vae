@@ -190,23 +190,29 @@ class BaseTrainingWrapper():
         self.optimizer = optimizer
         self.scaler = amp.GradScaler(enabled=cfg.amp) # Automatic mixed precision
 
+    @staticmethod
+    def get_cosine_factor(t, T, final=0.01):
+        """ As `t` goes from `0` to `T`, return value goes from `1` to `final`
+        """
+        return final + 0.5 * (1 - final) * (1 + math.cos(t * math.pi / T))
+
     def adjust_lr(self, t, T):
         cfg = self.cfg
 
         # learning rate warm-up to prevent gradient exploding in early stages
         T_warm = cfg.lr_warmup
         if t < T_warm:
-            lrf = min(t + 1, T_warm) / T_warm
+            lrf = (t + 1) / T_warm
         elif cfg.lr_sched == 'constant':
             lrf = 1.0
-        elif cfg.lr_sched == 'const-0.5-cos': # constant LR at first, then cosine LR
+        elif cfg.lr_sched == 'cosine':
+            lrf = self.get_cosine_factor(t-T_warm, T-T_warm-1, final=cfg.lrf_min)
+        elif cfg.lr_sched == 'const-0.5-cos': # constant LR (50% training) + cosine LR (50% training)
             boundary = round(T * 0.5)
             if t <= boundary:
                 lrf = 1.0
             else:
-                current = t - boundary
-                total = T - boundary - 1
-                lrf = cfg.lrf_min + 0.5 * (1 - cfg.lrf_min) * (1 + math.cos(current * math.pi / total))
+                lrf = self.get_cosine_factor(t-boundary, T-boundary-1, final=cfg.lrf_min)
         else:
             raise NotImplementedError(f'cfg.lr_sched = {cfg.lr_sched} not implemented')
 
