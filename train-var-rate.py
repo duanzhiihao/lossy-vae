@@ -45,6 +45,7 @@ def parse_args():
     parser.add_argument('--lr_sched',   type=str,  default='const-0.5-cos')
     parser.add_argument('--lrf_min',    type=float,default=0.01)
     parser.add_argument('--lr_warmup',  type=int,  default=0)
+    parser.add_argument('--wdecay',     type=float,default=0.0)
     parser.add_argument('--grad_clip',  type=float,default=2.0)
     # training iterations setting
     parser.add_argument('--iterations', type=int,  default=2_000_000)
@@ -61,7 +62,6 @@ def parse_args():
     parser.add_argument('--workers',    type=int,  default=0)
     cfg = parser.parse_args()
 
-    cfg.wdecay = 0.0
     cfg.amp = False
     return cfg
 

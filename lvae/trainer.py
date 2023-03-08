@@ -181,9 +181,11 @@ class BaseTrainingWrapper():
             cfg.sgd_momentum = 0.9
             optimizer = torch.optim.SGD(parameters, lr=cfg.lr, momentum=cfg.sgd_momentum)
         elif cfg.optimizer == 'adam':
-            optimizer = torch.optim.Adam(parameters, lr=cfg.lr)
+            optimizer = torch.optim.Adam(parameters, lr=cfg.lr, weight_decay=cfg.wdecay)
+        elif cfg.optimizer == 'adamw':
+            optimizer = torch.optim.AdamW(parameters, lr=cfg.lr, weight_decay=cfg.wdecay)
         elif cfg.optimizer == 'adamax':
-            optimizer = torch.optim.Adamax(parameters, lr=cfg.lr)
+            optimizer = torch.optim.Adamax(parameters, lr=cfg.lr, weight_decay=cfg.wdecay)
         else:
             raise ValueError(f'Unknown optimizer: {cfg.optimizer}')
 
