@@ -70,6 +70,8 @@ class BaseTrainingWrapper():
 
         self.cfg.log_dir = str(log_dir)
         self._log_dir = log_dir
+        self.model_log_interval = cfg.study_itv
+        self.wandb_log_interval = cfg.log_itv
 
     def set_device(self):
         local_rank = self.local_rank

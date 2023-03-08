@@ -1,15 +1,12 @@
 from tqdm import tqdm
-import json
 import logging
 import argparse
 import math
 import torch
 import torchvision as tv
-import wandb
 from torch.nn.parallel import DistributedDataParallel as DDP
 from timm.utils import unwrap_model
 
-from lvae.utils.coding import bd_rate
 from lvae.paths import known_datasets
 from lvae.trainer import BaseTrainingWrapper
 from lvae.datasets.image import get_dateset, make_generator
@@ -20,14 +17,14 @@ def parse_args():
     parser = argparse.ArgumentParser()
     # wandb setting
     parser.add_argument('--wbproject',  type=str,  default='default')
-    parser.add_argument('--wbgroup',    type=str,  default='var-rate-exp')
+    parser.add_argument('--wbgroup',    type=str,  default='exp')
     parser.add_argument('--wbtags',     type=str,  default=None, nargs='+')
     parser.add_argument('--wbnote',     type=str,  default=None)
     parser.add_argument('--wbmode',     type=str,  default='disabled')
     parser.add_argument('--name',       type=str,  default=None)
     # model setting
-    parser.add_argument('--model',      type=str,  default='rd_model_a')
-    parser.add_argument('--model_args', type=str,  default='')
+    parser.add_argument('--model',      type=str,  default='qarv_base_fr')
+    parser.add_argument('--model_args', type=str,  default='lmb=2048')
     # resume setting
     parser.add_argument('--resume',     type=str,  default=None)
     parser.add_argument('--weights',    type=str,  default=None)
@@ -36,22 +33,21 @@ def parse_args():
     parser.add_argument('--trainset',   type=str,  default='coco-train2017')
     parser.add_argument('--transform',  type=str,  default='crop=256,hflip=True')
     parser.add_argument('--valset',     type=str,  default='kodak')
-    parser.add_argument('--val_steps',  type=int,  default=8)
     # optimization setting
     parser.add_argument('--batch_size', type=int,  default=16)
     parser.add_argument('--accum_num',  type=int,  default=1)
     parser.add_argument('--optimizer',  type=str,  default='adam')
     parser.add_argument('--lr',         type=float,default=2e-4)
-    parser.add_argument('--lr_sched',   type=str,  default='const-0.5-cos')
+    parser.add_argument('--lr_sched',   type=str,  default='constant')
     parser.add_argument('--lrf_min',    type=float,default=0.01)
     parser.add_argument('--lr_warmup',  type=int,  default=0)
     parser.add_argument('--wdecay',     type=float,default=0.0)
     parser.add_argument('--grad_clip',  type=float,default=2.0)
     # training iterations setting
-    parser.add_argument('--iterations', type=int,  default=2_000_000)
+    parser.add_argument('--iterations', type=int,  default=800_000)
     parser.add_argument('--log_itv',    type=int,  default=100)
-    parser.add_argument('--study_itv',  type=int,  default=2000)
-    parser.add_argument('--eval_itv',   type=int,  default=2000)
+    parser.add_argument('--study_itv',  type=int,  default=1000)
+    parser.add_argument('--eval_itv',   type=int,  default=1000)
     parser.add_argument('--eval_first', action=argparse.BooleanOptionalAction, default=False)
     # exponential moving averaging (EMA)
     parser.add_argument('--ema',        action=argparse.BooleanOptionalAction, default=True)
@@ -112,7 +108,6 @@ class TrainWrapper(BaseTrainingWrapper):
 
         self._epoch_len  = len(trainset) / cfg.bs_effective
         self.trainloader = trainloader
-        # self.valloader   = valloader
         self.val_img_dir = val_img_dir
         self.cfg.epochs  = float(cfg.iterations / self._epoch_len)
 
@@ -185,7 +180,6 @@ class TrainWrapper(BaseTrainingWrapper):
             model = unwrap_model(self.model)
             if hasattr(model, 'study'):
                 model.study(save_dir=self._log_dir, wandb_run=self.wbrun)
-                # self.ema.ema.study(save_dir=self._log_dir/'ema')
                 self.ema.module.study(save_dir=self._log_dir/'ema')
             self.model.train()
 
@@ -198,7 +192,6 @@ class TrainWrapper(BaseTrainingWrapper):
 
             _log_dic = {
                 'general/lr': self.optimizer.param_groups[0]['lr'],
-                # 'general/grad_norm': self._moving_max_grad_norm,
                 'general/grad_norm': self._moving_grad_norm_buffer.max(),
                 'ema/decay': (self.ema.decay if self.ema else 0)
             }
@@ -218,16 +211,15 @@ class TrainWrapper(BaseTrainingWrapper):
             'general/iter':  self._cur_iter
         }
         model_ = unwrap_model(self.model).eval()
-        results = model_.self_evaluate(self.val_img_dir, log_dir=log_dir, steps=self.cfg.val_steps)
-        results_to_log = self.process_log_results(results)
+        results = model_.self_evaluate(self.val_img_dir, log_dir=log_dir)
+        print_json_like(results)
 
-        _log_dic.update({'val-metrics/plain-'+k: v for k,v in results_to_log.items()})
+        _log_dic.update({'val-metrics/plain-'+k: v for k,v in results.items()})
         # save last checkpoint
         checkpoint = {
             'model'     : model_.state_dict(),
             'optimizer' : self.optimizer.state_dict(),
             'scaler'    : self.scaler.state_dict(),
-            # loop_name   : loop_step,
             'epoch': self._cur_epoch,
             'iter':  self._cur_iter,
             'results'   : results,
@@ -236,12 +228,9 @@ class TrainWrapper(BaseTrainingWrapper):
         self._save_if_best(checkpoint)
 
         if self.cfg.ema:
-            # no_ema_loss = results['loss']
-            # results = self.eval_model(self.ema.module)
-            results = self.ema.module.self_evaluate(self.val_img_dir, log_dir=log_dir, steps=self.cfg.val_steps)
-            results_to_log = self.process_log_results(results)
-            # log_json_like(results)
-            _log_dic.update({'val-metrics/ema-'+k: v for k,v in results_to_log.items()})
+            results = self.ema.module.self_evaluate(self.val_img_dir, log_dir=log_dir)
+            print_json_like(results)
+            _log_dic.update({'val-metrics/ema-'+k: v for k,v in results.items()})
             # save last checkpoint of EMA
             checkpoint = {
                 'model': self.ema.module.state_dict(),
@@ -262,49 +251,6 @@ class TrainWrapper(BaseTrainingWrapper):
         self._results = results
         print()
 
-    def process_log_results(self, results):
-        bdr = compute_bd_rate_over_anchor(results, self.cfg.valset)
-        lambdas = results['lambda']
-        results_to_log = {'bd-rate': bdr}
-        for idx in [0, len(lambdas)//2, -1]:
-            lmb = round(lambdas[idx])
-            results_to_log.update({
-                f'lmb{lmb}/loss': results['loss'][idx],
-                f'lmb{lmb}/bpp':  results['bpp'][idx],
-                f'lmb{lmb}/psnr': results['psnr'][idx],
-            })
-        results['loss'] = bdr
-        results['bd-rate'] = bdr
-        print_json_like(results)
-        # draw R-D curve
-        # data = [[b,p] for b,p in zip(results['bpp'], results['psnr'])]
-        # table = wandb.Table(data=data, columns=['bpp', 'psnr'])
-        # self.wbrun.log(
-        #     {'psnr-rate' : wandb.plot.line(table, 'bpp', 'psnr', title='PSNR-Rate plot')},
-        #     step=self._cur_iter
-        # )
-        return results_to_log
-
-def read_rd_stats_from_json(json_path):
-    with open(json_path, mode='r') as f:
-        stats = json.load(fp=f)
-    assert isinstance(stats, dict)
-    stats = stats.get('results', stats)
-    return stats
-
-def get_anchor_stats(dataset_name):
-    anchor_paths = {
-        'kodak': 'results/kodak/kodak-vtm18.0.json',
-        'tecnick-rgb-1200': 'results/tecnick-rgb-1200/tecnick-rgb-1200-vtm18.0.json',
-        'clic2022-test': 'results/clic2022-test/clic2022-test-vtm18.0.json'
-    }
-    anchor_stats = read_rd_stats_from_json(anchor_paths[dataset_name])
-    return anchor_stats
-
-def compute_bd_rate_over_anchor(stats, dataset_name):
-    anchor_stats = get_anchor_stats(dataset_name)
-    bdr = bd_rate(anchor_stats['bpp'], anchor_stats['psnr'], stats['bpp'], stats['psnr'])
-    return bdr
 
 def print_json_like(dict_of_list):
     for k, value in dict_of_list.items():
