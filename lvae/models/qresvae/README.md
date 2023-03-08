@@ -2,7 +2,7 @@
 QRes-VAE (Quantized ResNet VAE) is a neural network model for lossy image compression.
 It is based on the ResNet VAE architecture.
 
-**Paper:** Lossy Image Compression with Quantized Hierarchical VAEs, **WACV 2023 Best Paper Award (Algorithms track)** \
+**Paper:** Lossy Image Compression with Quantized Hierarchical VAEs, [ ***WACV 2023 Best Algorithms Paper Award***](https://wacv2023.thecvf.com/node/174) \
 **Arxiv:** https://arxiv.org/abs/2208.13056
 
 
@@ -77,24 +77,39 @@ im = model.decompress_file('path/to/compressed.bin')
 ## Training
 Training is done by minimizing the `stats['loss']` term returned by the model's `forward()` function.
 
-Training scripts comming soon...
+We provide the training script in `train-fix-rate.py`.
+Training progress is tracked using Weights & Biases. By default, the run locates at https://wandb.ai/home > *default* project > *exp* group.
 
-<!-- ### Single GPU training
+### Single GPU training using default settings
 ```
-python train-var-rate.py --model qarv_base --batch_size 32 --iterations 2_000_000 --workers 8 --wbmode online
-```
-Training progress is tracked using `wandb`.
-By default, the run in in the https://wandb.ai/home > `default` project > `var-rate-exp` group.
-
-### Single GPU training, using the GPU with id=2
-```
-CUDA_VISIBLE_DEVICES=2 python train-var-rate.py --model qarv_base --batch_size 32 --iterations 2_000_000 --workers 8 --wbmode online
+python train-fix-rate.py --model qres34m
 ```
 
-### Multi-GPU training, using two GPUs id=4,5
+### Specify `lmb`
 ```
-CUDA_VISIBLE_DEVICES=4,5 torchrun --nproc_per_node 2 train-var-rate.py --model qarv_base --batch_size 16 --iterations 2_000_000 --workers 8 --wbmode online
-``` -->
+python train-fix-rate.py --model qres34m --model_args 'lmb=2048'
+```
+The training loss function is loss = Rate + `lmb` * distortion.
+- A large `lmb` results in high PSNR but high bpp
+- A small `lmb` results in low PSNR but low bpp
+
+### Specify GPU id=2, batch size, iterations, number of CPU workers, and use online W&B logging
+```
+CUDA_VISIBLE_DEVICES=2 python train-fix-rate.py --model qres34m --model_args 'lmb=2048' --batch_size 32 --iterations 600_000 --workers 8 --wbmode online
+```
+
+### Multi-GPU training, using two GPUs (id=2,3)
+```
+CUDA_VISIBLE_DEVICES=2,3 torchrun --nproc_per_node 2 train-fix-rate.py --model qres34m --model_args 'lmb=2048' --batch_size 16 --iterations 600_000 --workers 8 --wbmode online
+```
+Batch size is per-GPU. I.e., the total batch size is 16 x 2 = 32 in this example.
+
+### Reproduce our paper's results
+Our training code is slightly updated from the one we used in our paper. To approximately reproduce our paper's results, please use the following command:
+```
+torchrun --nproc_per_node 4 train-fix-rate.py --model qres34m --model_args 'lmb=2048' --batch_size 16 --iterations 600_000 --workers 8 --wbmode online
+```
+This requires 4 GPUs, each having >16GB memory.
 
 
 ## Citation

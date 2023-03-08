@@ -116,7 +116,7 @@ def qres34m_lossless(pretrained=False):
 
 
 @register_model
-def qres17m(lmb=8, pretrained=True):
+def qres17m(lmb=8, pretrained=False):
     cfg = dict()
 
     enc_nums = [6,6,4,2]

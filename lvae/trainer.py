@@ -118,10 +118,12 @@ class BaseTrainingWrapper():
         cfg.bs_effective = bs_effective
         cfg.world_size = self.world_size
 
-        self._log_ema_weight = 5.0 / (self.cfg.log_itv + 8.0)
-        _m = 1-self._log_ema_weight
+        self.wandb_log_interval = cfg.log_itv
+        self._log_ema_weight = 5.0 / (self.wandb_log_interval + 8.0)
+        _m = 1 - self._log_ema_weight
         msg = f'train metrics avg weight={self._log_ema_weight:.4f}, momentum={_m:.4f} \n'
         logging.info(msg)
+        self.model_log_interval = cfg.study_itv
 
     def set_dataset(self):
         self._epoch_len: int

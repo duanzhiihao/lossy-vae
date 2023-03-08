@@ -474,6 +474,9 @@ class HierarchicalVAE(nn.Module):
         self.im_scale = float(config['im_scale'])
         self.max_stride = config['max_stride']
 
+        self.register_buffer('_dummy', torch.zeros(1), persistent=False)
+        self._dummy: torch.Tensor
+
         self._stats_log = dict()
         self._flops_mode = False
         self.compressing = False
@@ -522,6 +525,7 @@ class HierarchicalVAE(nn.Module):
         Returns:
             dict: str -> loss
         """
+        im = im.to(self._dummy.device)
         x = self.preprocess_input(im)
         x_target = self.preprocess_target(im)
 
