@@ -87,6 +87,48 @@ class ConvNeXtAdaLNPatchDown(ConvNeXtBlockAdaLN):
         return out
 
 
+class ConvNeXtBlock(nn.Module):
+    def __init__(self, dim, embed_dim, out_dim=None, kernel_size=7, mlp_ratio=2,
+                 residual=True, ls_init_value=1e-6):
+        super().__init__()
+        # depthwise conv
+        pad = (kernel_size - 1) // 2
+        self.conv_dw = nn.Conv2d(dim, dim, kernel_size=kernel_size, padding=pad, groups=dim)
+        # layer norm
+        self.norm = nn.LayerNorm(dim, eps=1e-6, elementwise_affine=True)
+        self.norm.affine = True # for FLOPs computing
+        # MLP
+        hidden = int(mlp_ratio * dim)
+        out_dim = out_dim or dim
+        from timm.layers.mlp import Mlp
+        self.mlp = Mlp(dim, hidden_features=hidden, out_features=out_dim, act_layer=nn.GELU)
+        # layer scaling
+        if ls_init_value >= 0:
+            self.gamma = nn.Parameter(torch.full(size=(1, out_dim, 1, 1), fill_value=1e-6))
+        else:
+            self.gamma = None
+
+        self.residual = residual
+        self.requires_embedding = True
+
+    def forward(self, x, emb):
+        shortcut = x
+        # depthwise conv
+        x = self.conv_dw(x)
+        # layer norm
+        x = x.permute(0, 2, 3, 1).contiguous()
+        x = self.norm(x)
+        # MLP
+        x = self.mlp(x)
+        x = x.permute(0, 3, 1, 2).contiguous()
+        # scaling
+        if self.gamma is not None:
+            x = x.mul(self.gamma)
+        if self.residual:
+            x = x + shortcut
+        return x
+
+
 class LatentBlockSmall(nn.Module):
     def __init__(self, width, zdim, enc_width=None, **kwargs):
         super().__init__()
@@ -288,6 +330,27 @@ class VRLatentBlockBase(nn.Module):
 
     def update(self):
         self.discrete_gaussian.update()
+
+
+class LatentBlockBase(VRLatentBlockBase):
+    def __init__(self, width, zdim, embed_dim, enc_width=None, kernel_size=7, mlp_ratio=2):
+        super(VRLatentBlockBase, self).__init__()
+        self.in_channels  = width
+        self.out_channels = width
+
+        self.resnet_front = ConvNeXtBlock(width, embed_dim, kernel_size=kernel_size, mlp_ratio=mlp_ratio)
+        self.resnet_end   = ConvNeXtBlock(width, embed_dim, kernel_size=kernel_size, mlp_ratio=mlp_ratio)
+        self.posterior0 = ConvNeXtBlock(enc_width, embed_dim, kernel_size=kernel_size)
+        self.posterior1 = ConvNeXtBlock(width,     embed_dim, kernel_size=kernel_size)
+        self.posterior2 = ConvNeXtBlock(width,     embed_dim, kernel_size=kernel_size)
+        enc_width = enc_width or width
+        self.post_merge = common.conv_k1s1(width + enc_width, width)
+        self.posterior  = common.conv_k3s1(width, zdim)
+        self.z_proj     = common.conv_k1s1(zdim, width)
+        self.prior      = common.conv_k1s1(width, zdim*2)
+
+        self.discrete_gaussian = entropy_coding.DiscretizedGaussian()
+        self.is_latent_block = True
 
 
 class VRLatentBlockMedium(VRLatentBlockBase):
