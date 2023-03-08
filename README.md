@@ -1,7 +1,20 @@
 # Lossy Image Compression using Hierarchical VAEs
 
-This repository contains authors' implementation of several deep hierarchical VAE-based methods related to lossy image compression. \
-Code is under active development, and the API is subject to change.
+This repository contains the authors' implementation of several deep hierarchical VAE-based methods related to lossy image compression. \
+This project is under active development.
+
+## Implemented Methods (Pre-Trained Models Available)
+- **Lossy Image Compression with Quantized Hierarchical VAEs** [[arXiv](https://arxiv.org/abs/2208.13056)]
+    - Published at WACV 2023,[ ***Best Algorithms Paper Award***](https://wacv2023.thecvf.com/node/174)
+    - Abstract: a 12-layer VAE model named QRes-VAE. Good compression performance.
+    - **[Code & pre-trained models]**: [lossy-vae/lvae/models/qres](lvae/models/qresvae)
+- **QARV: Quantization-Aware ResNet VAE for Lossy Image Compression** [[arXiv](https://arxiv.org/abs/2302.08899)]
+    - Technical report
+    - Abstract: improved version of QRes-VAE. Variable-rate, faster decoding, better performance.
+    - **[Code & pre-trained models]**: [lossy-vae/lvae/models/qarv](lvae/models/qarv)
+- **An Improved Upper Bound on the Rate-Distortion Function of Images**
+    - Abstract: a 15-layer VAE model used to estimate the information R(D) function. This model proves that -30% BD-rate w.r.t. VTM is theoretically achievable.
+    - **[Code & pre-trained models]**: [lossy-vae/lvae/models/rd](lvae/models/rd)
 
 ### Features
 **Progressive coding:** our models learn *a deep hierarchy of* latent variables and compress/decompress images in a *coarse-to-fine* fashion. This feature comes from the hierarchical nature of ResNet VAEs.
@@ -23,20 +36,6 @@ Code is under active development, and the API is subject to change.
 *Time is the latency to encode/decode a 512x768 image, averaged over 24 Kodak images. Tested in plain PyTorch (v1.13 + CUDA 11.7) code, ie, no mixed-precision, torchscript, ONNX/TensorRT, etc. \
 *CPU is Intel 10700k. \
 *BD-rate is w.r.t. [VTM 18.0](https://vcgit.hhi.fraunhofer.de/jvet/VVCSoftware_VTM/-/tree/VTM-18.0), averaged on three common test sets (Kodak, Tecnick TESTIMAGES, and CLIC 2022 test set). **Lower is better.**
-
-
-## Implemented Methods - Pre-Trained Models Available
-- **Lossy Image Compression with Quantized Hierarchical VAEs** [[arXiv](https://arxiv.org/abs/2208.13056)]
-    - Published at WACV 2023,[ ***Best Algorithms Paper Award***](https://wacv2023.thecvf.com/node/174)
-    - [Abstract]: a 12-layer VAE model named QRes-VAE. Good compression performance.
-    - [Code]\: [lossy-vae/lvae/models/qres](lvae/models/qresvae)
-- **QARV: Quantization-Aware ResNet VAE for Lossy Image Compression** [[arXiv](https://arxiv.org/abs/2302.08899)]
-    - Technical report
-    - [Abstract]: improved version of QRes-VAE. Variable-rate, faster decoding, better performance.
-    - [Code]\: [lossy-vae/lvae/models/qarv](lvae/models/qarv)
-- **An Improved Upper Bound on the Rate-Distortion Function of Images**
-    - [Abstract]: a 15-layer VAE model used to estimate the information R(D) function. Shows that -30% BD-rate w.r.t. VTM is theoretically achievable.
-    - [Code]\: [lossy-vae/lvae/models/rd](lvae/models/rd)
 
 
 ## Install
