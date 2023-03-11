@@ -332,6 +332,27 @@ class VRLatentBlockBase(nn.Module):
         self.discrete_gaussian.update()
 
 
+class VRLVBlockR2P3(VRLatentBlockBase):
+    def __init__(self, width, zdim, embed_dim, enc_width=None, **kwargs):
+        super(VRLatentBlockBase, self).__init__()
+        self.in_channels  = width
+        self.out_channels = width
+
+        self.resnet_front = ConvNeXtBlockAdaLN(width,   embed_dim, **kwargs)
+        self.resnet_end   = ConvNeXtBlockAdaLN(width,   embed_dim, **kwargs)
+        self.posterior0 = ConvNeXtBlockAdaLN(enc_width, embed_dim, **kwargs)
+        self.posterior1 = ConvNeXtBlockAdaLN(width,     embed_dim, **kwargs)
+        self.posterior2 = ConvNeXtBlockAdaLN(width,     embed_dim, **kwargs)
+        enc_width = enc_width or width
+        self.post_merge = common.conv_k1s1(width + enc_width, width)
+        self.posterior  = common.conv_k3s1(width, zdim)
+        self.z_proj     = common.conv_k1s1(zdim, width)
+        self.prior      = common.conv_k1s1(width, zdim*2)
+
+        self.discrete_gaussian = entropy_coding.DiscretizedGaussian()
+        self.is_latent_block = True
+
+
 class LatentBlockBase(VRLatentBlockBase):
     def __init__(self, width, zdim, embed_dim, enc_width=None, kernel_size=7, mlp_ratio=2):
         super(VRLatentBlockBase, self).__init__()
