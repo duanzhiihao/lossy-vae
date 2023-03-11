@@ -426,6 +426,50 @@ class VRLatentBlockSmall(VRLatentBlockBase):
         return qm
 
 
+class VRLVBlockR1P1(VRLatentBlockBase):
+    def __init__(self, width, zdim, embed_dim, enc_width=None, **kwargs):
+        super(VRLatentBlockBase, self).__init__()
+        self.in_channels  = width
+        self.out_channels = width
+
+        enc_width = enc_width or width
+        concat_ch = (width * 2) if (enc_width is None) else (width + enc_width)
+        self.resnet_end   = ConvNeXtBlockAdaLN(width, embed_dim, **kwargs)
+        self.posterior2   = ConvNeXtBlockAdaLN(width, embed_dim, **kwargs)
+        self.post_merge = common.conv_k1s1(concat_ch, width)
+        self.posterior  = common.conv_k3s1(width, zdim)
+        self.z_proj     = common.conv_k1s1(zdim, width)
+        self.prior      = common.conv_k1s1(width, zdim*2)
+
+        self.discrete_gaussian = entropy_coding.DiscretizedGaussian()
+        self.is_latent_block = True
+
+    def transform_prior(self, feature, lmb_embedding):
+        """ prior p(z_i | z_<i)
+
+        Args:
+            feature (torch.Tensor): feature map
+        """
+        pm, plogv = self.prior(feature).chunk(2, dim=1)
+        plogv = tnf.softplus(plogv + 2.3) - 2.3 # make logscale > -2.3
+        pv = torch.exp(plogv)
+        return feature, pm, pv
+
+    def transform_posterior(self, feature, enc_feature, lmb_embedding):
+        """ posterior q(z_i | z_<i, x)
+
+        Args:
+            feature     (torch.Tensor): feature map
+            enc_feature (torch.Tensor): feature map
+        """
+        assert feature.shape[2:4] == enc_feature.shape[2:4]
+        merged = torch.cat([feature, enc_feature], dim=1)
+        merged = self.post_merge(merged)
+        merged = self.posterior2(merged, lmb_embedding)
+        qm = self.posterior(merged)
+        return qm
+
+
 class FeatureExtractor(nn.Module):
     def __init__(self, blocks):
         super().__init__()
