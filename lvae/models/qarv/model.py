@@ -26,7 +26,8 @@ def sinusoidal_embedding(values: torch.Tensor, dim=256, max_period=64):
 
 
 class ConvNeXtBlockAdaLN(nn.Module):
-    def __init__(self, dim, embed_dim, out_dim=None, kernel_size=7, mlp_ratio=2,
+    default_embedding_dim = 256
+    def __init__(self, dim, embed_dim=None, out_dim=None, kernel_size=7, mlp_ratio=2,
                  residual=True, ls_init_value=1e-6):
         super().__init__()
         # depthwise conv
@@ -36,6 +37,7 @@ class ConvNeXtBlockAdaLN(nn.Module):
         self.norm = nn.LayerNorm(dim, eps=1e-6, elementwise_affine=False)
         self.norm.affine = False # for FLOPs computing
         # AdaLN
+        embed_dim = embed_dim or self.default_embedding_dim
         self.embedding_layer = nn.Sequential(
             nn.GELU(),
             nn.Linear(embed_dim, 2*dim),
@@ -76,29 +78,33 @@ class ConvNeXtBlockAdaLN(nn.Module):
             x = x + shortcut
         return x
 
-class ConvNeXtAdaLNPatchDown(ConvNeXtBlockAdaLN):
-    def __init__(self, in_ch, out_ch, down_rate=2, **kwargs):
-        super().__init__(in_ch, **kwargs)
-        self.downsapmle = common.patch_downsample(in_ch, out_ch, rate=down_rate)
+# class ConvNeXtAdaLNPatchDown(ConvNeXtBlockAdaLN):
+#     def __init__(self, in_ch, out_ch, down_rate=2, **kwargs):
+#         super().__init__(in_ch, **kwargs)
+#         self.downsapmle = common.patch_downsample(in_ch, out_ch, rate=down_rate)
 
-    def forward(self, x, emb):
-        x = super().forward(x, emb)
-        out = self.downsapmle(x)
-        return out
+#     def forward(self, x, emb):
+#         x = super().forward(x, emb)
+#         out = self.downsapmle(x)
+#         return out
 
 
-class VRLatentBlockBase(nn.Module):
-    def __init__(self, width, zdim, embed_dim, enc_width=None, kernel_size=7, mlp_ratio=2):
+class VRLVBlockBase(nn.Module):
+    """ Vriable-Rate Latent Variable Block
+    """
+    default_embedding_dim = 256
+    def __init__(self, width, zdim, enc_key, enc_width, embed_dim=None, kernel_size=7, mlp_ratio=2):
         super().__init__()
         self.in_channels  = width
         self.out_channels = width
+        self.enc_key = enc_key
 
+        embed_dim = embed_dim or self.default_embedding_dim
         self.resnet_front = ConvNeXtBlockAdaLN(width, embed_dim, kernel_size=kernel_size, mlp_ratio=mlp_ratio)
         self.resnet_end   = ConvNeXtBlockAdaLN(width, embed_dim, kernel_size=kernel_size, mlp_ratio=mlp_ratio)
         self.posterior0 = ConvNeXtBlockAdaLN(enc_width, embed_dim, kernel_size=kernel_size)
         self.posterior1 = ConvNeXtBlockAdaLN(width,     embed_dim, kernel_size=kernel_size)
         self.posterior2 = ConvNeXtBlockAdaLN(width,     embed_dim, kernel_size=kernel_size)
-        enc_width = enc_width or width
         self.post_merge = common.conv_k1s1(width + enc_width, width)
         self.posterior  = common.conv_k3s1(width, zdim)
         self.z_proj     = common.conv_k1s1(zdim, width)
@@ -190,9 +196,9 @@ class VRLatentBlockBase(nn.Module):
         self.discrete_gaussian.update()
 
 
-class VRLatentBlockSmall(VRLatentBlockBase):
+class VRLVBlockSmall(VRLVBlockBase):
     def __init__(self, width, zdim, embed_dim, enc_width=None, **kwargs):
-        super(VRLatentBlockBase, self).__init__()
+        super(VRLVBlockBase, self).__init__()
         self.in_channels  = width
         self.out_channels = width
 
@@ -224,21 +230,21 @@ class VRLatentBlockSmall(VRLatentBlockBase):
         return qm
 
 
-class FeatureExtractor(nn.Module):
+class FeatureExtractorWithEmbedding(nn.Module):
     def __init__(self, blocks):
         super().__init__()
         self.enc_blocks = nn.ModuleList(blocks)
 
     def forward(self, x, emb=None):
-        feature = x
-        enc_features = OrderedDict()
+        features = OrderedDict()
         for i, block in enumerate(self.enc_blocks):
-            if getattr(block, 'requires_embedding', False):
-                feature = block(feature, emb)
+            if isinstance(block, common.SetKey):
+                features[block.key] = x
+            elif getattr(block, 'requires_embedding', False):
+                x = block(x, emb)
             else:
-                feature = block(feature)
-            enc_features[int(feature.shape[2])] = feature
-        return enc_features
+                x = block(x)
+        return x, features
 
 
 def mse_loss(fake, real):
@@ -253,7 +259,7 @@ class VariableRateLossyVAE(nn.Module):
     def __init__(self, config: dict):
         super().__init__()
         # feature extractor (bottom-up path)
-        self.encoder = FeatureExtractor(config.pop('enc_blocks'))
+        self.encoder = FeatureExtractorWithEmbedding(config.pop('enc_blocks'))
         # latent variable blocks (top-down path)
         self.dec_blocks = nn.ModuleList(config.pop('dec_blocks'))
         width = self.dec_blocks[0].in_channels
@@ -368,24 +374,25 @@ class VariableRateLossyVAE(nn.Module):
         feature = self.bias.expand(nB, -1, nH, nW)
         return feature
 
-    def forward_end2end(self, im: torch.Tensor, lmb: torch.Tensor, get_latents=False):
+    def forward_end2end(self, im: torch.Tensor, lmb: torch.Tensor, mode='trainval'):
         x = self.preprocess_input(im)
         # ================ get lambda embedding ================
         emb = self._get_lmb_embedding(lmb, n=im.shape[0])
         # ================ Forward pass ================
-        enc_features = self.encoder(x, emb)
+        _, enc_features = self.encoder(x, emb)
+        nB, _, xH, xW = x.shape
+        feature = self.get_bias(bhw_repeat=(nB, xH//self.max_stride, xW//self.max_stride))
         all_block_stats = []
-        nB, _, nH, nW = enc_features[min(enc_features.keys())].shape
-        feature = self.get_bias(bhw_repeat=(nB, nH, nW))
         for i, block in enumerate(self.dec_blocks):
             if getattr(block, 'is_latent_block', False):
-                key = int(feature.shape[2])
-                f_enc = enc_features[key]
-                feature, stats = block(feature, emb, enc_feature=f_enc, mode='trainval',
-                                       get_latent=get_latents)
+                f_enc = enc_features[block.enc_key]
+                feature, stats = block(feature, emb, enc_feature=f_enc, mode=mode)
                 all_block_stats.append(stats)
             elif getattr(block, 'requires_embedding', False):
                 feature = block(feature, emb)
+            elif isinstance(block, common.CompresionStopFlag) and (mode == 'compress'):
+                # no need to execute remaining blocks when compressing
+                return all_block_stats
             else:
                 feature = block(feature)
         return feature, all_block_stats
@@ -439,16 +446,13 @@ class VariableRateLossyVAE(nn.Module):
         return stats
 
     def conditional_sample(self, lmb, latents, emb=None, bhw_repeat=None, t=1.0):
-        """ sampling, conditioned on (a list of) latents
+        """ sampling, conditioned on a list of latents variables
 
         Args:
             latents (torch.Tensor): latent variables. If None, do unconditional sampling
             bhw_repeat (tuple): the constant bias will be repeated (batch, height, width) times
             t (float): temprature
         """
-        # initialize latents variables
-        if latents is None: # unconditional sampling
-            latents = [None] * self.num_latents
         if latents[0] is None:
             assert bhw_repeat is not None, f'bhw_repeat should be provided'
             nB, nH, nW = bhw_repeat
@@ -480,7 +484,7 @@ class VariableRateLossyVAE(nn.Module):
             bhw_repeat (tuple): repeat the initial constant feature n,h,w times
             t (float): temprature
         """
-        return self.conditional_sample(lmb, latents=None, bhw_repeat=bhw_repeat, t=t)
+        return self.conditional_sample(lmb, [None]*self.num_latents, bhw_repeat=bhw_repeat, t=t)
 
     @torch.no_grad()
     def study(self, save_dir, **kwargs):
@@ -512,25 +516,11 @@ class VariableRateLossyVAE(nn.Module):
 
     @torch.no_grad()
     def compress(self, im, lmb=None):
-        if lmb is None: # use default log-lambda
-            lmb = self.default_lmb
-        lmb = self.expand_to_tensor(lmb, n=im.shape[0])
-        lmb_embedding = self._get_lmb_embedding(lmb, n=im.shape[0])
-        x = self.preprocess_input(im)
-        enc_features = self.encoder(x, lmb_embedding)
-        nB, _, nH, nW = enc_features[min(enc_features.keys())].shape
-        feature = self.get_bias(bhw_repeat=(nB, nH, nW))
-        strings_all = []
-        for i, block in enumerate(self.dec_blocks):
-            if getattr(block, 'is_latent_block', False):
-                f_enc = enc_features[feature.shape[2]]
-                feature, stats = block(feature, lmb_embedding, enc_feature=f_enc, mode='compress')
-                strings_all.append(stats['strings'])
-            elif getattr(block, 'requires_embedding', False):
-                feature = block(feature, lmb_embedding)
-            else:
-                feature = block(feature)
-        strings_all.append((nB, nH, nW)) # smallest feature shape
+        lmb = lmb or self.default_lmb # if no lmb is provided, use the default one
+        all_block_stats = self.forward_end2end(im, lmb=lmb, mode='compress')
+        strings_all = [stat['strings'] for stat in all_block_stats]
+        nB, _, imH, imW = im.shape
+        strings_all.append((nB, imH//self.max_stride, imW//self.max_stride)) # smallest feature shape
         strings_all.append(lmb) # log lambda
         return strings_all
 

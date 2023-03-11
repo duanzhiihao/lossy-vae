@@ -45,56 +45,37 @@ def deconv(in_ch, out_ch, kernel_size=5, stride=2, zero_weights=False):
     return conv
 
 
-class Conv1331Block(nn.Module):
-    """ Adapted from VDVAE (https://github.com/openai/vdvae)
-    - Paper: Very Deep VAEs Generalize Autoregressive Models and Can Outperform Them on Images
-    - arxiv: https://arxiv.org/abs/2011.10650
+class SetKey(nn.Module):
+    """ A dummy layer that is used to mark the position of a layer in the network.
     """
-    def __init__(self, in_ch, hidden_ch=None, out_ch=None, use_3x3=True, zero_last=False):
+    def __init__(self, key):
         super().__init__()
-        out_ch = out_ch or in_ch
-        hidden_ch = hidden_ch or round(in_ch * 0.25)
-        self.in_channels = in_ch
-        self.out_channels = out_ch
-        self.residual = (in_ch == out_ch)
-        self.c1 = conv_k1s1(in_ch, hidden_ch)
-        self.c2 = conv_k3s1(hidden_ch, hidden_ch) if use_3x3 else conv_k1s1(hidden_ch, hidden_ch)
-        self.c3 = conv_k3s1(hidden_ch, hidden_ch) if use_3x3 else conv_k1s1(hidden_ch, hidden_ch)
-        self.c4 = conv_k1s1(hidden_ch, out_ch, zero_weights=zero_last)
-
-    def residual_scaling(self, N):
-        self.c4.weight.data.mul_(math.sqrt(1 / N))
+        self.key = key
 
     def forward(self, x):
-        xhat = self.c1(tnf.gelu(x))
-        xhat = self.c2(tnf.gelu(xhat))
-        xhat = self.c3(tnf.gelu(xhat))
-        xhat = self.c4(tnf.gelu(xhat))
-        out = (x + xhat) if self.residual else xhat
-        return out
+        return x
 
 
-class BottomUpEncoder(nn.Module):
-    def __init__(self, blocks, dict_key='height'):
+class CompresionStopFlag(nn.Module):
+    """ A dummy layer that is used to mark the stop position of encoding bits.
+    """
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return x
+
+
+class FeatureExtracter(nn.Module):
+    def __init__(self, blocks):
         super().__init__()
         self.enc_blocks = nn.ModuleList(blocks)
-        self.dict_key = dict_key
-
-    @torch.no_grad()
-    def _get_dict_key(self, feature, x=None):
-        if self.dict_key == 'height':
-            key = int(feature.shape[2])
-        elif self.dict_key == 'stride':
-            key = round(x.shape[2] / feature.shape[2])
-        else:
-            raise ValueError(f'Unknown key: self.dict_key={self.dict_key}')
-        return key
 
     def forward(self, x):
-        feature = x
-        enc_features = OrderedDict()
+        extracted_features = OrderedDict()
         for i, block in enumerate(self.enc_blocks):
-            feature = block(feature)
-            key = self._get_dict_key(feature, x)
-            enc_features[key] = feature
-        return enc_features
+            if isinstance(block, SetKey):
+                extracted_features[block.key] = x
+            else:
+                x = block(x)
+        return extracted_features
