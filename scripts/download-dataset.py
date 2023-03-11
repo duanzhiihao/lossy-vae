@@ -14,7 +14,7 @@ def main():
     name = str(args.name)
     assert name in ['kodak', 'clic2022-test', 'tecnick']
     tgt_dir = Path(args.datasets_root) / name
-    tgt_dir = tgt_dir.absolute()
+    tgt_dir = tgt_dir.resolve()
     tgt_dir.mkdir(exist_ok=True, parents=True)
 
     print(f'Will download data to {tgt_dir} [yes/no]?')
