@@ -48,7 +48,7 @@ def speedtest(model, first=None, verbose=True):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('-m', '--models',  type=str, default=['qarv_base'], nargs='+')
-    parser.add_argument('-a', '--kwargs',  type=str, default='')
+    parser.add_argument('-a', '--kwargs',  type=str, default='pretrained=True')
     parser.add_argument('-d', '--device',  type=str, default='cuda:0')
     parser.add_argument('-w', '--workers', type=int, default=None)
     args = parser.parse_args()
