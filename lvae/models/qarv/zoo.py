@@ -28,7 +28,7 @@ def qarv_base(lmb_range=(16,2048), pretrained=False):
     ch = 128
     enc_dims = [192, ch*3, ch*4, ch*4, ch*4]
 
-    res_block = qarv.ConvNeXtBlockAdaLN
+    res_block = common.ConvNeXtBlockAdaLN
     res_block.default_embedding_dim = cfg['lmb_embed_dim'][1]
 
     im_channels = 3

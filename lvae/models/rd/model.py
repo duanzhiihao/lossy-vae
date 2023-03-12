@@ -13,6 +13,17 @@ from timm.utils import AverageMeter
 import lvae.models.common as common
 
 
+class ConvNeXtAdaLNPatchDown(common.ConvNeXtBlockAdaLN):
+    def __init__(self, in_ch, out_ch, down_rate=2, **kwargs):
+        super().__init__(in_ch, **kwargs)
+        self.downsapmle = common.patch_downsample(in_ch, out_ch, rate=down_rate)
+
+    def forward(self, x, emb):
+        x = super().forward(x, emb)
+        out = self.downsapmle(x)
+        return out
+
+
 def linear_sqrt(x: torch.Tensor, threshold=6.0):
     """ linear fused with sqrt
     Args:
