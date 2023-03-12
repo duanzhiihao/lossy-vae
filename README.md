@@ -26,16 +26,16 @@ This project is under active development.
 
 <div align="center">
 
-|  Model Name | CPU* Enc. | CPU* Dec. | 1080 ti Enc. | 1080 ti Dec. | BD-rate* |
+|  Model Name | CPU* Enc. | CPU* Dec. | 1080 ti Enc. | 1080 ti Dec. | BD-rate* (lower is better) |
 |:-----------:|:---------:|:---------:|:------------:|:------------:|:--------:|
-|  `qres34m`  |   0.899s  |   0.441s  |    0.213s    |    0.120s    |   -3.95  |
-| `qarv_base` |   0.880s  |   0.295s  |    0.211s    |    0.096s    |   -7.26  |
+|  `qres34m`  |   0.899s  |   0.441s  |    0.213s    |    0.120s    |   -3.95 %  |
+| `qarv_base` |   0.880s  |   0.295s  |    0.211s    |    0.096s    |   -7.26 %  |
 
 </div>
 
 *Time is the latency to encode/decode a 512x768 image, averaged over 24 Kodak images. Tested in plain PyTorch (v1.13 + CUDA 11.7) code, ie, no mixed-precision, torchscript, ONNX/TensorRT, etc. \
 *CPU is Intel 10700k. \
-*BD-rate is w.r.t. [VTM 18.0](https://vcgit.hhi.fraunhofer.de/jvet/VVCSoftware_VTM/-/tree/VTM-18.0), averaged on three common test sets (Kodak, Tecnick TESTIMAGES, and CLIC 2022 test set). **Lower is better.**
+*BD-rate is w.r.t. [VTM 18.0](https://vcgit.hhi.fraunhofer.de/jvet/VVCSoftware_VTM/-/tree/VTM-18.0), averaged on three common test sets (Kodak, Tecnick TESTIMAGES, and CLIC 2022 test set).
 
 
 ## Install
