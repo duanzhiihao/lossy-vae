@@ -3,7 +3,7 @@ from tqdm import tqdm
 from pathlib import Path
 from collections import OrderedDict, defaultdict
 import math
-import pickle
+import struct
 import torch
 import torch.nn as nn
 import torch.nn.functional as tnf
@@ -11,7 +11,7 @@ import torchvision as tv
 import torchvision.transforms.functional as tvf
 from timm.utils import AverageMeter
 
-from lvae.utils.coding import crop_divisible_by, pad_divisible_by
+import lvae.utils.coding as coding
 import lvae.models.common as common
 import lvae.models.entropy_coding as entropy_coding
 
@@ -156,7 +156,7 @@ class VRLVBlockBase(nn.Module):
         """
         feature, pm, pv = self.transform_prior(feature, lmb_embedding)
 
-        additional = dict()
+        additional = dict() # used to pack all returned values
         if mode == 'trainval': # training or validation
             qm = self.transform_posterior(feature, enc_feature, lmb_embedding)
             if self.training: # if training, use additive uniform noise
@@ -301,6 +301,7 @@ class VariableRateLossyVAE(nn.Module):
         Args:
             im (torch.Tensor): a batch of images, values should be between (0, 1)
         """
+        assert (im.shape[2] % self.max_stride == 0) and (im.shape[3] % self.max_stride == 0)
         assert (im.dim() == 4) and (0 <= im.min() <= im.max() <= 1) and not im.requires_grad
         x = im.clone().add_(self.im_shift).mul_(self.im_scale)
         return x
@@ -382,20 +383,20 @@ class VariableRateLossyVAE(nn.Module):
         _, enc_features = self.encoder(x, emb)
         nB, _, xH, xW = x.shape
         feature = self.get_bias(bhw_repeat=(nB, xH//self.max_stride, xW//self.max_stride))
-        all_block_stats = []
+        lv_block_results = [] # all latent variable block results
         for i, block in enumerate(self.dec_blocks):
             if getattr(block, 'is_latent_block', False):
                 f_enc = enc_features[block.enc_key]
                 feature, stats = block(feature, emb, enc_feature=f_enc, mode=mode)
-                all_block_stats.append(stats)
+                lv_block_results.append(stats)
             elif getattr(block, 'requires_embedding', False):
                 feature = block(feature, emb)
             elif isinstance(block, common.CompresionStopFlag) and (mode == 'compress'):
                 # no need to execute remaining blocks when compressing
-                return all_block_stats
+                return lv_block_results
             else:
                 feature = block(feature)
-        return feature, all_block_stats
+        return feature, lv_block_results
 
     def forward(self, batch, lmb=None, return_rec=False):
         if isinstance(batch, (tuple, list)):
@@ -507,69 +508,6 @@ class VariableRateLossyVAE(nn.Module):
             im_hat = self.process_output(x_hat)
             tv.utils.save_image(torch.cat([im, im_hat], dim=0), fp=save_dir / imname)
 
-    def compress_mode(self, mode=True):
-        if mode:
-            for block in self.dec_blocks:
-                if hasattr(block, 'update'):
-                    block.update()
-        self.compressing = mode
-
-    @torch.no_grad()
-    def compress(self, im, lmb=None):
-        lmb = lmb or self.default_lmb # if no lmb is provided, use the default one
-        all_block_stats = self.forward_end2end(im, lmb=lmb, mode='compress')
-        strings_all = [stat['strings'] for stat in all_block_stats]
-        nB, _, imH, imW = im.shape
-        strings_all.append((nB, imH//self.max_stride, imW//self.max_stride)) # smallest feature shape
-        strings_all.append(lmb) # log lambda
-        return strings_all
-
-    @torch.no_grad()
-    def decompress(self, compressed_object):
-        lmb = compressed_object[-1] # log lambda
-        nB, nH, nW = compressed_object[-2] # smallest feature shape
-        lmb = self.expand_to_tensor(lmb, n=nB)
-        lmb_embedding = self._get_lmb_embedding(lmb, n=nB)
-
-        feature = self.get_bias(bhw_repeat=(nB, nH, nW))
-        str_i = 0
-        for bi, block in enumerate(self.dec_blocks):
-            if getattr(block, 'is_latent_block', False):
-                strs_batch = compressed_object[str_i]
-                feature, _ = block(feature, lmb_embedding, mode='decompress', strings=strs_batch)
-                str_i += 1
-            elif getattr(block, 'requires_embedding', False):
-                feature = block(feature, lmb_embedding)
-            else:
-                feature = block(feature)
-        assert str_i == len(compressed_object) - 2, f'str_i={str_i}, len={len(compressed_object)}'
-        im_hat = self.process_output(feature)
-        return im_hat
-
-    @torch.no_grad()
-    def compress_file(self, img_path, output_path):
-        # read image
-        img = Image.open(img_path)
-        img_padded = pad_divisible_by(img, div=self.max_stride)
-        device = next(self.parameters()).device
-        im = tvf.to_tensor(img_padded).unsqueeze_(0).to(device=device)
-        # compress by model
-        compressed_obj = self.compress(im)
-        compressed_obj.append((img.height, img.width))
-        # save bits to file
-        with open(output_path, 'wb') as f:
-            pickle.dump(compressed_obj, file=f)
-
-    @torch.no_grad()
-    def decompress_file(self, bits_path):
-        # read from file
-        with open(bits_path, 'rb') as f:
-            compressed_obj = pickle.load(file=f)
-        img_h, img_w = compressed_obj.pop()
-        # decompress by model
-        im_hat = self.decompress(compressed_obj)
-        return im_hat[:, :, :img_h, :img_w]
-
     @torch.no_grad()
     def _self_evaluate(self, img_paths, lmb: float, pbar=False, log_dir=None):
         pbar = tqdm(img_paths) if pbar else img_paths
@@ -581,7 +519,7 @@ class VariableRateLossyVAE(nn.Module):
         for impath in pbar:
             img = Image.open(impath)
             # imgh, imgw = img.height, img.width
-            img = crop_divisible_by(img, div=self.max_stride)
+            img = coding.crop_divisible_by(img, div=self.max_stride)
             # img_padded = pad_divisible_by(img, div=self.max_stride)
             im = tvf.to_tensor(img).unsqueeze_(0).to(device=self._dummy.device)
             x_hat, stats_all = self.forward_end2end(im, lmb=self.expand_to_tensor(lmb,n=1))
@@ -650,3 +588,77 @@ class VariableRateLossyVAE(nn.Module):
             for k,v in results.items():
                 all_lmb_stats[k].append(v)
         return all_lmb_stats
+
+    def compress_mode(self, mode=True):
+        if mode:
+            for block in self.dec_blocks:
+                if hasattr(block, 'update'):
+                    block.update()
+        self.compressing = mode
+
+    @torch.no_grad()
+    def compress(self, im, lmb=None):
+        lmb = lmb or self.default_lmb # if no lmb is provided, use the default one
+        lv_block_results = self.forward_end2end(im, lmb=lmb, mode='compress')
+        assert len(lv_block_results) == self.num_latents # each stat corresponds to a latent variable
+        assert im.shape[0] == 1, f'Right now only support a single image, got {im.shape=}'
+        all_lv_strings = [res['strings'][0] for res in lv_block_results]
+        string = coding.pack_byte_strings(all_lv_strings)
+        # encode lambda and image shape in the header
+        nB, _, imH, imW = im.shape
+        header1 = struct.pack('f', lmb)
+        header2 = struct.pack('3H', nB, imH//self.max_stride, imW//self.max_stride)
+        string = header1 + header2 + string
+        return string
+
+    @torch.no_grad()
+    def decompress(self, string):
+        # extract lambda
+        _len = 4
+        lmb, string = struct.unpack('f', string[:_len])[0], string[_len:]
+        # extract shape
+        _len = 2 * 3
+        (nB, nH, nW), string = struct.unpack('3H', string[:_len]), string[_len:]
+        all_lv_strings = coding.unpack_byte_string(string)
+
+        lmb = self.expand_to_tensor(lmb, n=nB)
+        lmb_embedding = self._get_lmb_embedding(lmb, n=nB)
+
+        feature = self.get_bias(bhw_repeat=(nB, nH, nW))
+        str_i = 0
+        for bi, block in enumerate(self.dec_blocks):
+            if getattr(block, 'is_latent_block', False):
+                strs_batch = [all_lv_strings[str_i],]
+                feature, _ = block(feature, lmb_embedding, mode='decompress', strings=strs_batch)
+                str_i += 1
+            elif getattr(block, 'requires_embedding', False):
+                feature = block(feature, lmb_embedding)
+            else:
+                feature = block(feature)
+        assert str_i == len(all_lv_strings), f'str_i={str_i}, len={len(all_lv_strings)}'
+        im_hat = self.process_output(feature)
+        return im_hat
+
+    @torch.no_grad()
+    def compress_file(self, img_path, output_path, lmb=None):
+        # read image
+        img = Image.open(img_path)
+        img_padded = coding.pad_divisible_by(img, div=self.max_stride)
+        im = tvf.to_tensor(img_padded).unsqueeze_(0).to(device=self._dummy.device)
+        # compress by model
+        body_str = self.compress(im, lmb=lmb)
+        header_str = struct.pack('2H', img.height, img.width)
+        # save bits to file
+        with open(output_path, 'wb') as f:
+            f.write(header_str + body_str)
+
+    @torch.no_grad()
+    def decompress_file(self, bits_path):
+        # read from file
+        with open(bits_path, 'rb') as f:
+            header_str = f.read(4)
+            body_str = f.read()
+        img_h, img_w = struct.unpack('2H', header_str)
+        # decompress by model
+        im_hat = self.decompress(body_str)
+        return im_hat[:, :, :img_h, :img_w]
