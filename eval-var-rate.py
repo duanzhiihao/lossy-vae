@@ -1,6 +1,7 @@
 from pathlib import Path
 from collections import defaultdict, OrderedDict
 import json
+import platform
 import argparse
 import math
 import torch
@@ -28,10 +29,7 @@ def main():
     model.compress_mode()
 
     start, end = args.lmb_range
-    p = 3.0
-    lambdas = torch.linspace(
-        math.pow(start,1/p), math.pow(end,1/p), steps=args.steps
-    ).pow(p).tolist()
+    lambdas = torch.linspace(math.log(start), math.log(end), steps=args.steps).exp().tolist()
 
     save_json_path = Path(f'runs/results/{args.dataset_name}-{args.model}.json')
     if not save_json_path.parent.is_dir():
@@ -53,9 +51,11 @@ def main():
     # save to json
     json_data = OrderedDict()
     json_data['name'] = args.model
-    json_data['lambdas'] = lambdas
     json_data['test-set'] = args.dataset_name
-    json_data['results'] = all_lmb_stats
+    json_data['platform'] = platform.platform()
+    json_data['device']   = str(torch.device(args.device))
+    json_data['lambdas']  = lambdas
+    json_data['results']  = all_lmb_stats
     with open(save_json_path, 'w') as f:
         json.dump(json_data, fp=f, indent=4)
     print(f'\nSaved results to {save_json_path} \n')

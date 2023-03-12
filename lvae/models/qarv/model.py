@@ -434,16 +434,18 @@ class VariableRateLossyVAE(nn.Module):
             channel_bpp_stats = defaultdict(AverageMeter)
         for impath in pbar:
             img = Image.open(impath)
-            # imgh, imgw = img.height, img.width
-            img = coding.crop_divisible_by(img, div=self.max_stride)
-            # img_padded = pad_divisible_by(img, div=self.max_stride)
-            im = tvf.to_tensor(img).unsqueeze_(0).to(device=self._dummy.device)
+            imgh, imgw = img.height, img.width
+            # img = coding.crop_divisible_by(img, div=self.max_stride)
+            img_padded = coding.pad_divisible_by(img, div=self.max_stride)
+            im = tvf.to_tensor(img_padded).unsqueeze_(0).to(device=self._dummy.device)
             x_hat, stats_all = self.forward_end2end(im, lmb=self.expand_to_tensor(lmb,n=1))
+            x_hat = x_hat[:, :, :imgh, :imgw]
             # compute bpp
             _, imC, imH, imW = im.shape
-            kl = sum([stat['kl'].sum(dim=(1, 2, 3)) for stat in stats_all]).mean(0) / (imC*imH*imW)
+            kl = sum([stat['kl'].sum(dim=(1, 2, 3)) for stat in stats_all]).mean(0) / (imC*imgh*imgw)
             bpp_estimated = kl.item() * self.log2_e * imC
             # compute psnr
+            im = tvf.to_tensor(img).unsqueeze_(0).to(device=self._dummy.device)
             x_target = self.preprocess_target(im)
             distortion = self.distortion_func(x_hat, x_target).item()
             real = tvf.to_tensor(img)
@@ -491,8 +493,7 @@ class VariableRateLossyVAE(nn.Module):
         img_paths = list(Path(img_dir).rglob('*.*'))
         start, end = self.lmb_range if (lmb_range is None) else lmb_range
         # uniform in cube root space
-        p = 3.0
-        lambdas = torch.linspace(math.pow(start,1/p), math.pow(end,1/p), steps=steps).pow(3)
+        lambdas = torch.linspace(math.log(start), math.log(end), steps=steps).exp()
         pbar = tqdm(lambdas.tolist(), position=0, ascii=True)
         all_lmb_stats = defaultdict(list)
         if log_dir is not None:
