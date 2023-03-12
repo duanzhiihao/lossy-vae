@@ -37,7 +37,7 @@ TBD -->
 
 ## Evaluate the Upper Bound for R(D) (i.e., a lower bound in the PSNR-bpp plane)
 ```
-python eval-var-rate.py --model rd_model_base --dataset_name kodak --device cuda:0
+python lvae/models/rd/evaluate.py --model rd_model_base --dataset_name kodak --device cuda:0
 ```
 - `kodak` can be replaced by any other dataset name in `lvae.paths.known_datasets`
 
