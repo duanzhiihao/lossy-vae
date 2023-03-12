@@ -11,7 +11,6 @@ import torchvision.transforms.functional as tvf
 from timm.utils import AverageMeter
 
 import lvae.models.common as common
-from lvae.models.qarv.model import sinusoidal_embedding, ConvNeXtBlockAdaLN
 
 
 def linear_sqrt(x: torch.Tensor, threshold=6.0):
@@ -46,13 +45,14 @@ class LatentVariableBlockOld(nn.Module):
         self.in_channels  = width
         self.out_channels = width
 
+        block = common.ConvNeXtBlockAdaLN
         enc_width = enc_width or width
         concat_ch = (width * 2) if (enc_width is None) else (width + enc_width)
-        self.resnet_front = ConvNeXtBlockAdaLN(width, embed_dim, kernel_size=kernel_size, mlp_ratio=mlp_ratio)
-        self.resnet_end   = ConvNeXtBlockAdaLN(width, embed_dim, kernel_size=kernel_size, mlp_ratio=mlp_ratio)
-        self.posterior0 = ConvNeXtBlockAdaLN(enc_width, embed_dim, kernel_size=kernel_size)
-        self.posterior1 = ConvNeXtBlockAdaLN(width,     embed_dim, kernel_size=kernel_size)
-        self.posterior2 = ConvNeXtBlockAdaLN(width,     embed_dim, kernel_size=kernel_size)
+        self.resnet_front = block(width,   embed_dim, kernel_size=kernel_size, mlp_ratio=mlp_ratio)
+        self.resnet_end   = block(width,   embed_dim, kernel_size=kernel_size, mlp_ratio=mlp_ratio)
+        self.posterior0 = block(enc_width, embed_dim, kernel_size=kernel_size)
+        self.posterior1 = block(width,     embed_dim, kernel_size=kernel_size)
+        self.posterior2 = block(width,     embed_dim, kernel_size=kernel_size)
         self.post_merge = common.conv_k1s1(concat_ch, width)
         self.posterior  = common.conv_k3s1(width, zdim*2)
         self.prior      = common.conv_k1s1(width, zdim*2)
@@ -133,13 +133,14 @@ class LatentVariableBlock(nn.Module):
         self.in_channels  = width
         self.out_channels = width
 
+        block = common.ConvNeXtBlockAdaLN
         enc_width = enc_width or width
         concat_ch = (width * 2) if (enc_width is None) else (width + enc_width)
-        self.resnet_front = ConvNeXtBlockAdaLN(width, embed_dim, kernel_size=kernel_size, mlp_ratio=mlp_ratio)
-        self.resnet_end   = ConvNeXtBlockAdaLN(width, embed_dim, kernel_size=kernel_size, mlp_ratio=mlp_ratio)
-        self.posterior0 = ConvNeXtBlockAdaLN(enc_width, embed_dim, kernel_size=kernel_size)
-        self.posterior1 = ConvNeXtBlockAdaLN(width,     embed_dim, kernel_size=kernel_size)
-        self.posterior2 = ConvNeXtBlockAdaLN(width,     embed_dim, kernel_size=kernel_size)
+        self.resnet_front = block(width,   embed_dim, kernel_size=kernel_size, mlp_ratio=mlp_ratio)
+        self.resnet_end   = block(width,   embed_dim, kernel_size=kernel_size, mlp_ratio=mlp_ratio)
+        self.posterior0 = block(enc_width, embed_dim, kernel_size=kernel_size)
+        self.posterior1 = block(width,     embed_dim, kernel_size=kernel_size)
+        self.posterior2 = block(width,     embed_dim, kernel_size=kernel_size)
         self.post_merge = common.conv_k1s1(concat_ch, width)
         self.posterior  = common.conv_k3s1(width, zdim*2)
         self.prior      = common.conv_k1s1(width, zdim*2)
@@ -352,7 +353,8 @@ class VariableRateLossyVAE(nn.Module):
     def _get_lmb_embedding(self, lmb, n):
         lmb = self.expand_to_tensor(lmb, n=n)
         scaled = self._lmb_scaling(lmb)
-        embedding = sinusoidal_embedding(scaled, dim=self.lmb_embed_dim[0], max_period=self._sin_period)
+        embedding = common.sinusoidal_embedding(scaled, dim=self.lmb_embed_dim[0],
+                                                max_period=self._sin_period)
         embedding = self.lmb_embedding(embedding)
         return embedding
 

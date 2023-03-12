@@ -72,10 +72,91 @@ class FeatureExtracter(nn.Module):
         self.enc_blocks = nn.ModuleList(blocks)
 
     def forward(self, x):
-        extracted_features = OrderedDict()
+        features = OrderedDict()
         for i, block in enumerate(self.enc_blocks):
             if isinstance(block, SetKey):
-                extracted_features[block.key] = x
+                features[block.key] = x
             else:
                 x = block(x)
-        return extracted_features
+        return features
+
+
+class FeatureExtractorWithEmbedding(nn.Module):
+    def __init__(self, blocks):
+        super().__init__()
+        self.enc_blocks = nn.ModuleList(blocks)
+
+    def forward(self, x, emb=None):
+        features = OrderedDict()
+        for i, block in enumerate(self.enc_blocks):
+            if isinstance(block, SetKey):
+                features[block.key] = x
+            elif getattr(block, 'requires_embedding', False):
+                x = block(x, emb)
+            else:
+                x = block(x)
+        return x, features
+
+
+def sinusoidal_embedding(values: torch.Tensor, dim=256, max_period=64):
+    assert values.dim() == 1 and (dim % 2) == 0
+    exponents = torch.linspace(0, 1, steps=(dim // 2))
+    freqs = torch.pow(max_period, -1.0 * exponents).to(device=values.device)
+    args = values.view(-1, 1) * freqs.view(1, dim//2)
+    embedding = torch.cat([torch.cos(args), torch.sin(args)], dim=-1)
+    return embedding
+
+
+class ConvNeXtBlockAdaLN(nn.Module):
+    default_embedding_dim = 256
+    def __init__(self, dim, embed_dim=None, out_dim=None, kernel_size=7, mlp_ratio=2,
+                 residual=True, ls_init_value=1e-6):
+        super().__init__()
+        # depthwise conv
+        pad = (kernel_size - 1) // 2
+        self.conv_dw = nn.Conv2d(dim, dim, kernel_size=kernel_size, padding=pad, groups=dim)
+        # layer norm
+        self.norm = nn.LayerNorm(dim, eps=1e-6, elementwise_affine=False)
+        self.norm.affine = False # for FLOPs computing
+        # AdaLN
+        embed_dim = embed_dim or self.default_embedding_dim
+        self.embedding_layer = nn.Sequential(
+            nn.GELU(),
+            nn.Linear(embed_dim, 2*dim),
+            nn.Unflatten(1, unflattened_size=(1, 1, 2*dim))
+        )
+        # MLP
+        hidden = int(mlp_ratio * dim)
+        out_dim = out_dim or dim
+        from timm.layers.mlp import Mlp
+        self.mlp = Mlp(dim, hidden_features=hidden, out_features=out_dim, act_layer=nn.GELU)
+        # layer scaling
+        if ls_init_value >= 0:
+            self.gamma = nn.Parameter(torch.full(size=(1, out_dim, 1, 1), fill_value=1e-6))
+        else:
+            self.gamma = None
+
+        self.residual = residual
+        self.requires_embedding = True
+
+    def forward(self, x, emb):
+        shortcut = x
+        # depthwise conv
+        x = self.conv_dw(x)
+        # layer norm
+        x = x.permute(0, 2, 3, 1).contiguous()
+        x = self.norm(x)
+        # AdaLN
+        embedding = self.embedding_layer(emb)
+        shift, scale = torch.chunk(embedding, chunks=2, dim=-1)
+        x = x * (1 + scale) + shift
+        # MLP
+        x = self.mlp(x)
+        x = x.permute(0, 3, 1, 2).contiguous()
+        # scaling
+        if self.gamma is not None:
+            x = x.mul(self.gamma)
+        if self.residual:
+            x = x + shortcut
+        return x
+
