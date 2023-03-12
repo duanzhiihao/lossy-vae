@@ -45,56 +45,118 @@ def deconv(in_ch, out_ch, kernel_size=5, stride=2, zero_weights=False):
     return conv
 
 
-class Conv1331Block(nn.Module):
-    """ Adapted from VDVAE (https://github.com/openai/vdvae)
-    - Paper: Very Deep VAEs Generalize Autoregressive Models and Can Outperform Them on Images
-    - arxiv: https://arxiv.org/abs/2011.10650
+class SetKey(nn.Module):
+    """ A dummy layer that is used to mark the position of a layer in the network.
     """
-    def __init__(self, in_ch, hidden_ch=None, out_ch=None, use_3x3=True, zero_last=False):
+    def __init__(self, key):
         super().__init__()
-        out_ch = out_ch or in_ch
-        hidden_ch = hidden_ch or round(in_ch * 0.25)
-        self.in_channels = in_ch
-        self.out_channels = out_ch
-        self.residual = (in_ch == out_ch)
-        self.c1 = conv_k1s1(in_ch, hidden_ch)
-        self.c2 = conv_k3s1(hidden_ch, hidden_ch) if use_3x3 else conv_k1s1(hidden_ch, hidden_ch)
-        self.c3 = conv_k3s1(hidden_ch, hidden_ch) if use_3x3 else conv_k1s1(hidden_ch, hidden_ch)
-        self.c4 = conv_k1s1(hidden_ch, out_ch, zero_weights=zero_last)
-
-    def residual_scaling(self, N):
-        self.c4.weight.data.mul_(math.sqrt(1 / N))
+        self.key = key
 
     def forward(self, x):
-        xhat = self.c1(tnf.gelu(x))
-        xhat = self.c2(tnf.gelu(xhat))
-        xhat = self.c3(tnf.gelu(xhat))
-        xhat = self.c4(tnf.gelu(xhat))
-        out = (x + xhat) if self.residual else xhat
-        return out
+        return x
 
 
-class BottomUpEncoder(nn.Module):
-    def __init__(self, blocks, dict_key='height'):
+class CompresionStopFlag(nn.Module):
+    """ A dummy layer that is used to mark the stop position of encoding bits.
+    """
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return x
+
+
+class FeatureExtracter(nn.Module):
+    def __init__(self, blocks):
         super().__init__()
         self.enc_blocks = nn.ModuleList(blocks)
-        self.dict_key = dict_key
-
-    @torch.no_grad()
-    def _get_dict_key(self, feature, x=None):
-        if self.dict_key == 'height':
-            key = int(feature.shape[2])
-        elif self.dict_key == 'stride':
-            key = round(x.shape[2] / feature.shape[2])
-        else:
-            raise ValueError(f'Unknown key: self.dict_key={self.dict_key}')
-        return key
 
     def forward(self, x):
-        feature = x
-        enc_features = OrderedDict()
+        features = OrderedDict()
         for i, block in enumerate(self.enc_blocks):
-            feature = block(feature)
-            key = self._get_dict_key(feature, x)
-            enc_features[key] = feature
-        return enc_features
+            if isinstance(block, SetKey):
+                features[block.key] = x
+            else:
+                x = block(x)
+        return features
+
+
+class FeatureExtractorWithEmbedding(nn.Module):
+    def __init__(self, blocks):
+        super().__init__()
+        self.enc_blocks = nn.ModuleList(blocks)
+
+    def forward(self, x, emb=None):
+        features = OrderedDict()
+        for i, block in enumerate(self.enc_blocks):
+            if isinstance(block, SetKey):
+                features[block.key] = x
+            elif getattr(block, 'requires_embedding', False):
+                x = block(x, emb)
+            else:
+                x = block(x)
+        return x, features
+
+
+def sinusoidal_embedding(values: torch.Tensor, dim=256, max_period=64):
+    assert values.dim() == 1 and (dim % 2) == 0
+    exponents = torch.linspace(0, 1, steps=(dim // 2))
+    freqs = torch.pow(max_period, -1.0 * exponents).to(device=values.device)
+    args = values.view(-1, 1) * freqs.view(1, dim//2)
+    embedding = torch.cat([torch.cos(args), torch.sin(args)], dim=-1)
+    return embedding
+
+
+class ConvNeXtBlockAdaLN(nn.Module):
+    default_embedding_dim = 256
+    def __init__(self, dim, embed_dim=None, out_dim=None, kernel_size=7, mlp_ratio=2,
+                 residual=True, ls_init_value=1e-6):
+        super().__init__()
+        # depthwise conv
+        pad = (kernel_size - 1) // 2
+        self.conv_dw = nn.Conv2d(dim, dim, kernel_size=kernel_size, padding=pad, groups=dim)
+        # layer norm
+        self.norm = nn.LayerNorm(dim, eps=1e-6, elementwise_affine=False)
+        self.norm.affine = False # for FLOPs computing
+        # AdaLN
+        embed_dim = embed_dim or self.default_embedding_dim
+        self.embedding_layer = nn.Sequential(
+            nn.GELU(),
+            nn.Linear(embed_dim, 2*dim),
+            nn.Unflatten(1, unflattened_size=(1, 1, 2*dim))
+        )
+        # MLP
+        hidden = int(mlp_ratio * dim)
+        out_dim = out_dim or dim
+        from timm.layers.mlp import Mlp
+        self.mlp = Mlp(dim, hidden_features=hidden, out_features=out_dim, act_layer=nn.GELU)
+        # layer scaling
+        if ls_init_value >= 0:
+            self.gamma = nn.Parameter(torch.full(size=(1, out_dim, 1, 1), fill_value=1e-6))
+        else:
+            self.gamma = None
+
+        self.residual = residual
+        self.requires_embedding = True
+
+    def forward(self, x, emb):
+        shortcut = x
+        # depthwise conv
+        x = self.conv_dw(x)
+        # layer norm
+        x = x.permute(0, 2, 3, 1).contiguous()
+        x = self.norm(x)
+        # AdaLN
+        embedding = self.embedding_layer(emb)
+        shift, scale = torch.chunk(embedding, chunks=2, dim=-1)
+        x = x * (1 + scale) + shift
+        # MLP
+        x = self.mlp(x)
+        x = x.permute(0, 3, 1, 2).contiguous()
+        # scaling
+        if self.gamma is not None:
+            x = x.mul(self.gamma)
+        if self.residual:
+            x = x + shortcut
+        return x
+

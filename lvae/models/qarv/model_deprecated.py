@@ -3,6 +3,7 @@ from tqdm import tqdm
 from pathlib import Path
 from collections import OrderedDict, defaultdict
 import math
+import pickle
 import torch
 import torch.nn as nn
 import torch.nn.functional as tnf
@@ -10,10 +11,72 @@ import torchvision as tv
 import torchvision.transforms.functional as tvf
 from timm.utils import AverageMeter
 
+from lvae.utils.coding import crop_divisible_by, pad_divisible_by
 import lvae.models.common as common
+import lvae.models.entropy_coding as entropy_coding
 
 
-class ConvNeXtAdaLNPatchDown(common.ConvNeXtBlockAdaLN):
+def sinusoidal_embedding(values: torch.Tensor, dim=256, max_period=64):
+    assert values.dim() == 1 and (dim % 2) == 0
+    exponents = torch.linspace(0, 1, steps=(dim // 2))
+    freqs = torch.pow(max_period, -1.0 * exponents).to(device=values.device)
+    args = values.view(-1, 1) * freqs.view(1, dim//2)
+    embedding = torch.cat([torch.cos(args), torch.sin(args)], dim=-1)
+    return embedding
+
+
+class ConvNeXtBlockAdaLN(nn.Module):
+    def __init__(self, dim, embed_dim, out_dim=None, kernel_size=7, mlp_ratio=2,
+                 residual=True, ls_init_value=1e-6):
+        super().__init__()
+        # depthwise conv
+        pad = (kernel_size - 1) // 2
+        self.conv_dw = nn.Conv2d(dim, dim, kernel_size=kernel_size, padding=pad, groups=dim)
+        # layer norm
+        self.norm = nn.LayerNorm(dim, eps=1e-6, elementwise_affine=False)
+        self.norm.affine = False # for FLOPs computing
+        # AdaLN
+        self.embedding_layer = nn.Sequential(
+            nn.GELU(),
+            nn.Linear(embed_dim, 2*dim),
+            nn.Unflatten(1, unflattened_size=(1, 1, 2*dim))
+        )
+        # MLP
+        hidden = int(mlp_ratio * dim)
+        out_dim = out_dim or dim
+        from timm.layers.mlp import Mlp
+        self.mlp = Mlp(dim, hidden_features=hidden, out_features=out_dim, act_layer=nn.GELU)
+        # layer scaling
+        if ls_init_value >= 0:
+            self.gamma = nn.Parameter(torch.full(size=(1, out_dim, 1, 1), fill_value=1e-6))
+        else:
+            self.gamma = None
+
+        self.residual = residual
+        self.requires_embedding = True
+
+    def forward(self, x, emb):
+        shortcut = x
+        # depthwise conv
+        x = self.conv_dw(x)
+        # layer norm
+        x = x.permute(0, 2, 3, 1).contiguous()
+        x = self.norm(x)
+        # AdaLN
+        embedding = self.embedding_layer(emb)
+        shift, scale = torch.chunk(embedding, chunks=2, dim=-1)
+        x = x * (1 + scale) + shift
+        # MLP
+        x = self.mlp(x)
+        x = x.permute(0, 3, 1, 2).contiguous()
+        # scaling
+        if self.gamma is not None:
+            x = x.mul(self.gamma)
+        if self.residual:
+            x = x + shortcut
+        return x
+
+class ConvNeXtAdaLNPatchDown(ConvNeXtBlockAdaLN):
     def __init__(self, in_ch, out_ch, down_rate=2, **kwargs):
         super().__init__(in_ch, **kwargs)
         self.downsapmle = common.patch_downsample(in_ch, out_ch, rate=down_rate)
@@ -24,57 +87,25 @@ class ConvNeXtAdaLNPatchDown(common.ConvNeXtBlockAdaLN):
         return out
 
 
-def linear_sqrt(x: torch.Tensor, threshold=6.0):
-    """ linear fused with sqrt
-    Args:
-        x (torch.Tensor): input
-        threshold (float): values above this revert to a signed sqrt function
-    """
-    x_abs = torch.abs(x)
-    soft = torch.sign(x) * torch.pow(x_abs, 1 - 0.5*torch.tanh(x_abs))
-    soft = torch.where(x_abs == 0, input=x, other=soft)
-    # For numerical stability the implementation reverts to signed sqrt function when input > threshold
-    signed_sqrt = torch.sign(x) * torch.sqrt(x_abs + 1e-8)
-    x = torch.where(x_abs <= threshold, input=soft, other=signed_sqrt)
-    return x
-
-def gaussian_kl(mu1, v1, mu2, v2):
-    """ KL divergence with mean and scale (ie, standard deviations)
-    Args:
-        mu1 (torch.tensor): mean 1
-        v1  (torch.tensor): std 1
-        mu2 (torch.tensor): mean 2
-        v2  (torch.tensor): std 2
-    """
-    return -0.5 + v2.log() - v1.log() + 0.5 * (v1 ** 2 + (mu1 - mu2) ** 2) / (v2 ** 2)
-
-
-class LatentVariableBlockOld(nn.Module):
-    softplus_beta = math.log(2)
+class VRLatentBlockBase(nn.Module):
     def __init__(self, width, zdim, embed_dim, enc_width=None, kernel_size=7, mlp_ratio=2):
         super().__init__()
         self.in_channels  = width
         self.out_channels = width
 
-        block = common.ConvNeXtBlockAdaLN
+        self.resnet_front = ConvNeXtBlockAdaLN(width, embed_dim, kernel_size=kernel_size, mlp_ratio=mlp_ratio)
+        self.resnet_end   = ConvNeXtBlockAdaLN(width, embed_dim, kernel_size=kernel_size, mlp_ratio=mlp_ratio)
+        self.posterior0 = ConvNeXtBlockAdaLN(enc_width, embed_dim, kernel_size=kernel_size)
+        self.posterior1 = ConvNeXtBlockAdaLN(width,     embed_dim, kernel_size=kernel_size)
+        self.posterior2 = ConvNeXtBlockAdaLN(width,     embed_dim, kernel_size=kernel_size)
         enc_width = enc_width or width
-        concat_ch = (width * 2) if (enc_width is None) else (width + enc_width)
-        self.resnet_front = block(width,   embed_dim, kernel_size=kernel_size, mlp_ratio=mlp_ratio)
-        self.resnet_end   = block(width,   embed_dim, kernel_size=kernel_size, mlp_ratio=mlp_ratio)
-        self.posterior0 = block(enc_width, embed_dim, kernel_size=kernel_size)
-        self.posterior1 = block(width,     embed_dim, kernel_size=kernel_size)
-        self.posterior2 = block(width,     embed_dim, kernel_size=kernel_size)
-        self.post_merge = common.conv_k1s1(concat_ch, width)
-        self.posterior  = common.conv_k3s1(width, zdim*2)
-        self.prior      = common.conv_k1s1(width, zdim*2)
+        self.post_merge = common.conv_k1s1(width + enc_width, width)
+        self.posterior  = common.conv_k3s1(width, zdim)
         self.z_proj     = common.conv_k1s1(zdim, width)
+        self.prior      = common.conv_k1s1(width, zdim*2)
 
+        self.discrete_gaussian = entropy_coding.DiscretizedGaussian()
         self.is_latent_block = True
-
-    def std_smooth(self, v):
-        # https://arxiv.org/abs/2203.13751, section 4.2
-        v = tnf.softplus(v, beta=self.softplus_beta, threshold=12)
-        return v
 
     def transform_prior(self, feature, lmb_embedding):
         """ prior p(z_i | z_<i)
@@ -83,8 +114,9 @@ class LatentVariableBlockOld(nn.Module):
             feature (torch.Tensor): feature map
         """
         feature = self.resnet_front(feature, lmb_embedding)
-        pm, pv = self.prior(feature).chunk(2, dim=1)
-        pv = self.std_smooth(pv)
+        pm, plogv = self.prior(feature).chunk(2, dim=1)
+        plogv = tnf.softplus(plogv + 2.3) - 2.3 # make logscale > -2.3
+        pv = torch.exp(plogv)
         return feature, pm, pv
 
     def transform_posterior(self, feature, enc_feature, lmb_embedding):
@@ -100,12 +132,16 @@ class LatentVariableBlockOld(nn.Module):
         merged = torch.cat([feature, enc_feature], dim=1)
         merged = self.post_merge(merged)
         merged = self.posterior2(merged, lmb_embedding)
-        qm, qv = self.posterior(merged).chunk(2, dim=1)
-        qv = self.std_smooth(qv)
-        return qm, qv
+        qm = self.posterior(merged)
+        return qm
+
+    def fuse_feature_and_z(self, feature, z):
+        # add the new information carried by z to the feature
+        feature = feature + self.z_proj(z)
+        return feature
 
     def forward(self, feature, lmb_embedding, enc_feature=None, mode='trainval',
-                get_latent=False, latent=None, t=1.0):
+                get_latent=False, latent=None, t=1.0, strings=None):
         """ a complicated forward function
 
         Args:
@@ -116,65 +152,62 @@ class LatentVariableBlockOld(nn.Module):
 
         additional = dict()
         if mode == 'trainval': # training or validation
-            qm, qv = self.transform_posterior(feature, enc_feature, lmb_embedding)
-            kl = gaussian_kl(qm, qv, pm, pv)
+            qm = self.transform_posterior(feature, enc_feature, lmb_embedding)
+            if self.training: # if training, use additive uniform noise
+                z = qm + torch.empty_like(qm).uniform_(-0.5, 0.5)
+                log_prob = entropy_coding.gaussian_log_prob_mass(pm, pv, x=z, bin_size=1.0, prob_clamp=1e-6)
+                kl = -1.0 * log_prob
+            else: # if evaluation, use residual quantization
+                z, probs = self.discrete_gaussian(qm, scales=pv, means=pm)
+                kl = -1.0 * torch.log(probs)
             additional['kl'] = kl
-            # sample z from posterior
-            z = qm + qv * torch.randn_like(qm)
         elif mode == 'sampling':
             if latent is None: # if z is not provided, sample it from the prior
-                z = pm + pv * torch.randn_like(pm) * t
+                z = pm + pv * torch.randn_like(pm) * t + torch.empty_like(pm).uniform_(-0.5, 0.5) * t
             else: # if `z` is provided, directly use it.
                 assert pm.shape == latent.shape
                 z = latent
+        elif mode == 'compress': # encode z into bits
+            qm = self.transform_posterior(feature, enc_feature, lmb_embedding)
+            indexes = self.discrete_gaussian.build_indexes(pv)
+            strings = self.discrete_gaussian.compress(qm, indexes, means=pm)
+            z = self.discrete_gaussian.quantize(qm, mode='dequantize', means=pm)
+            additional['strings'] = strings
+        elif mode == 'decompress': # decode z from bits
+            assert strings is not None
+            indexes = self.discrete_gaussian.build_indexes(pv)
+            z = self.discrete_gaussian.decompress(strings, indexes, means=pm)
         else:
             raise ValueError(f'Unknown mode={mode}')
 
-        feature = feature + self.z_proj(z)
+        feature = self.fuse_feature_and_z(feature, z)
         feature = self.resnet_end(feature, lmb_embedding)
         if get_latent:
             additional['z'] = z.detach()
         return feature, additional
 
+    def update(self):
+        self.discrete_gaussian.update()
 
-class LatentVariableBlock(nn.Module):
-    softplus_beta = math.log(2)
-    def __init__(self, width, zdim, embed_dim, enc_width=None, kernel_size=7, mlp_ratio=2):
-        super().__init__()
+
+class VRLatentBlockSmall(VRLatentBlockBase):
+    def __init__(self, width, zdim, embed_dim, enc_width=None, **kwargs):
+        super(VRLatentBlockBase, self).__init__()
         self.in_channels  = width
         self.out_channels = width
 
-        block = common.ConvNeXtBlockAdaLN
         enc_width = enc_width or width
         concat_ch = (width * 2) if (enc_width is None) else (width + enc_width)
-        self.resnet_front = block(width,   embed_dim, kernel_size=kernel_size, mlp_ratio=mlp_ratio)
-        self.resnet_end   = block(width,   embed_dim, kernel_size=kernel_size, mlp_ratio=mlp_ratio)
-        self.posterior0 = block(enc_width, embed_dim, kernel_size=kernel_size)
-        self.posterior1 = block(width,     embed_dim, kernel_size=kernel_size)
-        self.posterior2 = block(width,     embed_dim, kernel_size=kernel_size)
+        self.resnet_front = ConvNeXtBlockAdaLN(width, embed_dim, **kwargs)
+        self.resnet_end   = ConvNeXtBlockAdaLN(width, embed_dim, **kwargs)
+        self.posterior2   = ConvNeXtBlockAdaLN(width, embed_dim, **kwargs)
         self.post_merge = common.conv_k1s1(concat_ch, width)
-        self.posterior  = common.conv_k3s1(width, zdim*2)
-        self.prior      = common.conv_k1s1(width, zdim*2)
+        self.posterior  = common.conv_k3s1(width, zdim)
         self.z_proj     = common.conv_k1s1(zdim, width)
+        self.prior      = common.conv_k1s1(width, zdim*2)
 
+        self.discrete_gaussian = entropy_coding.DiscretizedGaussian()
         self.is_latent_block = True
-
-    def std_smooth(self, v):
-        # https://arxiv.org/abs/2203.13751, section 4.2
-        v = tnf.softplus(v, beta=self.softplus_beta, threshold=12)
-        return v
-
-    def transform_prior(self, feature, lmb_embedding):
-        """ prior p(z_i | z_<i)
-
-        Args:
-            feature (torch.Tensor): feature map
-        """
-        feature = self.resnet_front(feature, lmb_embedding)
-        pm, pv = self.prior(feature).chunk(2, dim=1)
-        pm = linear_sqrt(pm)
-        pv = self.std_smooth(pv)
-        return feature, pm, pv
 
     def transform_posterior(self, feature, enc_feature, lmb_embedding):
         """ posterior q(z_i | z_<i, x)
@@ -184,47 +217,11 @@ class LatentVariableBlock(nn.Module):
             enc_feature (torch.Tensor): feature map
         """
         assert feature.shape[2:4] == enc_feature.shape[2:4]
-        enc_feature = self.posterior0(enc_feature, lmb_embedding)
-        feature = self.posterior1(feature, lmb_embedding)
         merged = torch.cat([feature, enc_feature], dim=1)
         merged = self.post_merge(merged)
         merged = self.posterior2(merged, lmb_embedding)
-        qm, qv = self.posterior(merged).chunk(2, dim=1)
-        qm = linear_sqrt(qm)
-        qv = self.std_smooth(qv)
-        return qm, qv
-
-    def forward(self, feature, lmb_embedding, enc_feature=None, mode='trainval',
-                get_latent=False, latent=None, t=1.0):
-        """ a complicated forward function
-
-        Args:
-            feature     (torch.Tensor): feature map
-            enc_feature (torch.Tensor): feature map
-        """
-        feature, pm, pv = self.transform_prior(feature, lmb_embedding)
-
-        additional = dict()
-        if mode == 'trainval': # training or validation
-            qm, qv = self.transform_posterior(feature, enc_feature, lmb_embedding)
-            kl = gaussian_kl(qm, qv, pm, pv)
-            additional['kl'] = kl
-            # sample z from posterior
-            z = qm + qv * torch.randn_like(qm)
-        elif mode == 'sampling':
-            if latent is None: # if z is not provided, sample it from the prior
-                z = pm + pv * torch.randn_like(pm) * t
-            else: # if `z` is provided, directly use it.
-                assert pm.shape == latent.shape
-                z = latent
-        else:
-            raise ValueError(f'Unknown mode={mode}')
-
-        feature = feature + self.z_proj(z)
-        feature = self.resnet_end(feature, lmb_embedding)
-        if get_latent:
-            additional['z'] = z.detach()
-        return feature, additional
+        qm = self.posterior(merged)
+        return qm
 
 
 class FeatureExtractor(nn.Module):
@@ -275,7 +272,8 @@ class VariableRateLossyVAE(nn.Module):
         self.register_buffer('_dummy', torch.zeros(1), persistent=False)
         self._dummy: torch.Tensor
 
-        # self.compressing = False
+        self.compressing = False
+        # self._stats_log = dict()
         self._logging_images = config.get('log_images', [])
         self._flops_mode = False
 
@@ -337,13 +335,10 @@ class VariableRateLossyVAE(nn.Module):
 
     def sample_lmb(self, n):
         low, high = self.lmb_range # original lmb space, 16 to 1024
-        # p = 3.0
-        # low, high = math.pow(low, 1/p), math.pow(high, 1/p) # transformed space
-        # transformed_lmb = low + (high-low) * torch.rand(n, device=self._dummy.device)
-        # lmb = torch.pow(transformed_lmb, exponent=p)
-        low, high = math.log(low), math.log(high) # transformed space
+        p = 3.0
+        low, high = math.pow(low, 1/p), math.pow(high, 1/p) # transformed space
         transformed_lmb = low + (high-low) * torch.rand(n, device=self._dummy.device)
-        lmb = torch.exp(transformed_lmb)
+        lmb = torch.pow(transformed_lmb, exponent=p)
         return lmb
 
     def expand_to_tensor(self, input_, n):
@@ -364,8 +359,7 @@ class VariableRateLossyVAE(nn.Module):
     def _get_lmb_embedding(self, lmb, n):
         lmb = self.expand_to_tensor(lmb, n=n)
         scaled = self._lmb_scaling(lmb)
-        embedding = common.sinusoidal_embedding(scaled, dim=self.lmb_embed_dim[0],
-                                                max_period=self._sin_period)
+        embedding = sinusoidal_embedding(scaled, dim=self.lmb_embed_dim[0], max_period=self._sin_period)
         embedding = self.lmb_embedding(embedding)
         return embedding
 
@@ -455,10 +449,11 @@ class VariableRateLossyVAE(nn.Module):
         # initialize latents variables
         if latents is None: # unconditional sampling
             latents = [None] * self.num_latents
+        if latents[0] is None:
             assert bhw_repeat is not None, f'bhw_repeat should be provided'
             nB, nH, nW = bhw_repeat
         else: # conditional sampling
-            assert (bhw_repeat is None) and (len(latents) == self.num_latents)
+            assert (len(latents) == self.num_latents)
             nB, _, nH, nW = latents[0].shape
         # initialize lmb and embedding
         lmb = self.expand_to_tensor(lmb, n=nB)
@@ -508,6 +503,83 @@ class VariableRateLossyVAE(nn.Module):
             im_hat = self.process_output(x_hat)
             tv.utils.save_image(torch.cat([im, im_hat], dim=0), fp=save_dir / imname)
 
+    def compress_mode(self, mode=True):
+        if mode:
+            for block in self.dec_blocks:
+                if hasattr(block, 'update'):
+                    block.update()
+        self.compressing = mode
+
+    @torch.no_grad()
+    def compress(self, im, lmb=None):
+        if lmb is None: # use default log-lambda
+            lmb = self.default_lmb
+        lmb = self.expand_to_tensor(lmb, n=im.shape[0])
+        lmb_embedding = self._get_lmb_embedding(lmb, n=im.shape[0])
+        x = self.preprocess_input(im)
+        enc_features = self.encoder(x, lmb_embedding)
+        nB, _, nH, nW = enc_features[min(enc_features.keys())].shape
+        feature = self.get_bias(bhw_repeat=(nB, nH, nW))
+        strings_all = []
+        for i, block in enumerate(self.dec_blocks):
+            if getattr(block, 'is_latent_block', False):
+                f_enc = enc_features[feature.shape[2]]
+                feature, stats = block(feature, lmb_embedding, enc_feature=f_enc, mode='compress')
+                strings_all.append(stats['strings'])
+            elif getattr(block, 'requires_embedding', False):
+                feature = block(feature, lmb_embedding)
+            else:
+                feature = block(feature)
+        strings_all.append((nB, nH, nW)) # smallest feature shape
+        strings_all.append(lmb) # log lambda
+        return strings_all
+
+    @torch.no_grad()
+    def decompress(self, compressed_object):
+        lmb = compressed_object[-1] # log lambda
+        nB, nH, nW = compressed_object[-2] # smallest feature shape
+        lmb = self.expand_to_tensor(lmb, n=nB)
+        lmb_embedding = self._get_lmb_embedding(lmb, n=nB)
+
+        feature = self.get_bias(bhw_repeat=(nB, nH, nW))
+        str_i = 0
+        for bi, block in enumerate(self.dec_blocks):
+            if getattr(block, 'is_latent_block', False):
+                strs_batch = compressed_object[str_i]
+                feature, _ = block(feature, lmb_embedding, mode='decompress', strings=strs_batch)
+                str_i += 1
+            elif getattr(block, 'requires_embedding', False):
+                feature = block(feature, lmb_embedding)
+            else:
+                feature = block(feature)
+        assert str_i == len(compressed_object) - 2, f'str_i={str_i}, len={len(compressed_object)}'
+        im_hat = self.process_output(feature)
+        return im_hat
+
+    @torch.no_grad()
+    def compress_file(self, img_path, output_path):
+        # read image
+        img = Image.open(img_path)
+        img_padded = pad_divisible_by(img, div=self.max_stride)
+        device = next(self.parameters()).device
+        im = tvf.to_tensor(img_padded).unsqueeze_(0).to(device=device)
+        # compress by model
+        compressed_obj = self.compress(im)
+        compressed_obj.append((img.height, img.width))
+        # save bits to file
+        with open(output_path, 'wb') as f:
+            pickle.dump(compressed_obj, file=f)
+
+    @torch.no_grad()
+    def decompress_file(self, bits_path):
+        # read from file
+        with open(bits_path, 'rb') as f:
+            compressed_obj = pickle.load(file=f)
+        img_h, img_w = compressed_obj.pop()
+        # decompress by model
+        im_hat = self.decompress(compressed_obj)
+        return im_hat[:, :, :img_h, :img_w]
+
     @torch.no_grad()
     def _self_evaluate(self, img_paths, lmb: float, pbar=False, log_dir=None):
         pbar = tqdm(img_paths) if pbar else img_paths
@@ -519,7 +591,7 @@ class VariableRateLossyVAE(nn.Module):
         for impath in pbar:
             img = Image.open(impath)
             # imgh, imgw = img.height, img.width
-            # img = crop_divisible_by(img, div=self.max_stride)
+            img = crop_divisible_by(img, div=self.max_stride)
             # img_padded = pad_divisible_by(img, div=self.max_stride)
             im = tvf.to_tensor(img).unsqueeze_(0).to(device=self._dummy.device)
             x_hat, stats_all = self.forward_end2end(im, lmb=self.expand_to_tensor(lmb,n=1))

@@ -20,24 +20,26 @@ def rd_model_base(lmb_range=(4,2048), pretrained=False):
     dec_dims = [768, 768, 640, 512, 256]
     z_dims = [32, 32, 32, 32, 32]
 
+    res_block = common.ConvNeXtBlockAdaLN
+
     im_channels = 3
     cfg['enc_blocks'] = [
         # 64x64
         common.patch_downsample(im_channels, enc_dims[0], rate=4),
         # 16x16
-        *[lib.ConvNeXtBlockAdaLN(enc_dims[0], _emb_dim) for _ in range(6)],
+        *[res_block(enc_dims[0], _emb_dim) for _ in range(6)],
         lib.ConvNeXtAdaLNPatchDown(enc_dims[0], enc_dims[1], embed_dim=_emb_dim),
         # 8x8
-        *[lib.ConvNeXtBlockAdaLN(enc_dims[1], _emb_dim) for _ in range(6)],
+        *[res_block(enc_dims[1], _emb_dim) for _ in range(6)],
         lib.ConvNeXtAdaLNPatchDown(enc_dims[1], enc_dims[2], embed_dim=_emb_dim),
         # 4x4
-        *[lib.ConvNeXtBlockAdaLN(enc_dims[2], _emb_dim) for _ in range(6)],
+        *[res_block(enc_dims[2], _emb_dim) for _ in range(6)],
         lib.ConvNeXtAdaLNPatchDown(enc_dims[2], enc_dims[3], embed_dim=_emb_dim),
         # 2x2
-        *[lib.ConvNeXtBlockAdaLN(enc_dims[3], _emb_dim) for _ in range(4)],
+        *[res_block(enc_dims[3], _emb_dim) for _ in range(4)],
         lib.ConvNeXtAdaLNPatchDown(enc_dims[3], enc_dims[3], embed_dim=_emb_dim),
         # 1x1
-        *[lib.ConvNeXtBlockAdaLN(enc_dims[3], _emb_dim) for _ in range(4)],
+        *[res_block(enc_dims[3], _emb_dim) for _ in range(4)],
     ]
 
     cfg['dec_blocks'] = [
