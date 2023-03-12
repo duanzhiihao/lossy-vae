@@ -29,7 +29,7 @@ This project is under active development.
 |  Model Name | CPU* Enc. | CPU* Dec. | 1080 ti Enc. | 1080 ti Dec. | BD-rate* |
 |:-----------:|:---------:|:---------:|:------------:|:------------:|:--------:|
 |  `qres34m`  |   0.899s  |   0.441s  |    0.213s    |    0.120s    |   -3.95  |
-| `qarv_base` |   0.880s  |   0.295s  |    0.211s    |    0.096s    |   -6.54  |
+| `qarv_base` |   0.880s  |   0.295s  |    0.211s    |    0.096s    |   -7.26  |
 
 </div>
 
