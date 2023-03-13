@@ -15,7 +15,7 @@ def qarv2_b3(lmb_range=(16,2048), pretrained=False):
     cfg['im_scale'] = 3.67572653978347
     # maximum downsampling factor
     cfg['max_stride'] = 64
-    # maximum downsampling factor
+    # images used during training
     cfg['log_images'] = ['collie64.png', 'gun128.png', 'motor256.png']
 
     # variable-rate
@@ -106,7 +106,7 @@ def qarv2_s6(lmb_range=(16,2048), pretrained=False):
     cfg['im_scale'] = 3.67572653978347
     # maximum downsampling factor
     cfg['max_stride'] = 64
-    # maximum downsampling factor
+    # images used during training
     cfg['log_images'] = ['collie64.png', 'gun128.png', 'motor256.png']
 
     # variable-rate
