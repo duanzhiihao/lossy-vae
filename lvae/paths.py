@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 # The root directory of all datasets
-_root = Path('/ssd0/datasets')
+_root = Path('../../datasets').resolve()
 
 known_datasets = {
     # Kodak images: http://r0k.us/graphics/kodak
