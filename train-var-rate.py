@@ -111,7 +111,6 @@ class TrainWrapper(BaseTrainingWrapper):
 
         self._epoch_len  = len(trainset) / cfg.bs_effective
         self.trainloader = trainloader
-        # self.valloader   = valloader
         self.val_img_dir = val_img_dir
         self.cfg.epochs  = float(cfg.iterations / self._epoch_len)
 
@@ -184,7 +183,6 @@ class TrainWrapper(BaseTrainingWrapper):
             model = unwrap_model(self.model)
             if hasattr(model, 'study'):
                 model.study(save_dir=self._log_dir, wandb_run=self.wbrun)
-                # self.ema.ema.study(save_dir=self._log_dir/'ema')
                 self.ema.module.study(save_dir=self._log_dir/'ema')
             self.model.train()
 
@@ -197,7 +195,6 @@ class TrainWrapper(BaseTrainingWrapper):
 
             _log_dic = {
                 'general/lr': self.optimizer.param_groups[0]['lr'],
-                # 'general/grad_norm': self._moving_max_grad_norm,
                 'general/grad_norm': self._moving_grad_norm_buffer.max(),
                 'ema/decay': (self.ema.decay if self.ema else 0)
             }
@@ -235,11 +232,8 @@ class TrainWrapper(BaseTrainingWrapper):
         self._save_if_best(checkpoint)
 
         if self.cfg.ema:
-            # no_ema_loss = results['loss']
-            # results = self.eval_model(self.ema.module)
             results = self.ema.module.self_evaluate(self.val_img_dir, log_dir=log_dir, steps=self.cfg.val_steps)
             results_to_log = self.process_log_results(results)
-            # log_json_like(results)
             _log_dic.update({'val-metrics/ema-'+k: v for k,v in results_to_log.items()})
             # save last checkpoint of EMA
             checkpoint = {

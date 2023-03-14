@@ -78,7 +78,7 @@ im = model.decompress_file('path/to/compressed.bin')
 Training is done by minimizing the `stats['loss']` term returned by the model's `forward()` function.
 
 We provide the training script in `train-fix-rate.py`.
-Training progress is tracked using Weights & Biases. By default, the run locates at https://wandb.ai/home > *default* project > *exp* group.
+Training progress is tracked using Weights & Biases. By default, the run locates at https://wandb.ai/home > *default* project > *fix-rate-exp* group.
 
 ### Single GPU training using default settings
 ```

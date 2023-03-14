@@ -17,7 +17,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     # wandb setting
     parser.add_argument('--wbproject',  type=str,  default='default')
-    parser.add_argument('--wbgroup',    type=str,  default='exp')
+    parser.add_argument('--wbgroup',    type=str,  default='fix-rate-exp')
     parser.add_argument('--wbtags',     type=str,  default=None, nargs='+')
     parser.add_argument('--wbnote',     type=str,  default=None)
     parser.add_argument('--wbmode',     type=str,  default='disabled')
@@ -41,13 +41,9 @@ def parse_args():
     parser.add_argument('--lr_sched',   type=str,  default='constant')
     parser.add_argument('--lrf_min',    type=float,default=0.01)
     parser.add_argument('--lr_warmup',  type=int,  default=0)
-    parser.add_argument('--wdecay',     type=float,default=0.0)
     parser.add_argument('--grad_clip',  type=float,default=2.0)
     # training iterations setting
     parser.add_argument('--iterations', type=int,  default=800_000)
-    parser.add_argument('--log_itv',    type=int,  default=100)
-    parser.add_argument('--study_itv',  type=int,  default=1000)
-    parser.add_argument('--eval_itv',   type=int,  default=1000)
     parser.add_argument('--eval_first', action=argparse.BooleanOptionalAction, default=False)
     # exponential moving averaging (EMA)
     parser.add_argument('--ema',        action=argparse.BooleanOptionalAction, default=True)
@@ -58,18 +54,21 @@ def parse_args():
     parser.add_argument('--workers',    type=int,  default=6)
     cfg = parser.parse_args()
 
+    # default settings
+    cfg.wdecay = 0.0
     cfg.amp = False
+    cfg.wandb_log_interval = 100
+    cfg.model_log_interval = 1000
+    cfg.model_val_interval = 1000
     return cfg
 
 
 class TrainWrapper(BaseTrainingWrapper):
-    def __init__(self, cfg):
+    def __init__(self):
         super().__init__()
-        self.main(cfg)
+        self.cfg = parse_args()
 
-    def main(self, cfg):
-        self.cfg = cfg
-
+    def main(self):
         # preparation
         self.set_logging()
         self.set_device()
@@ -95,7 +94,7 @@ class TrainWrapper(BaseTrainingWrapper):
     def set_dataset(self):
         cfg = self.cfg
 
-        logging.info('Initializing Datasets and Dataloaders...')
+        logging.info('==== Datasets and Dataloaders ====')
         trainset = get_dateset(cfg.trainset, transform_cfg=cfg.transform)
         trainloader = make_generator(trainset, batch_size=cfg.batch_size, workers=cfg.workers)
         logging.info(f'Training root: {trainset.root}')
@@ -104,7 +103,7 @@ class TrainWrapper(BaseTrainingWrapper):
 
         # test set
         val_img_dir = known_datasets[cfg.valset]
-        logging.info(f'Val root: {val_img_dir} \n')
+        logging.info(f'Validation root: {val_img_dir} \n')
 
         self._epoch_len  = len(trainset) / cfg.bs_effective
         self.trainloader = trainloader
@@ -127,11 +126,11 @@ class TrainWrapper(BaseTrainingWrapper):
 
             # evaluation
             if self.is_main:
-                if cfg.eval_itv <= 0: # no evaluation
+                if cfg.model_val_interval <= 0: # no evaluation
                     pass
                 elif (step == 0) and (not cfg.eval_first): # first iteration
                     pass
-                elif step % cfg.eval_itv == 0: # evaluate every {cfg.eval_itv} epochs
+                elif step % cfg.model_val_interval == 0: # evaluaion
                     self.evaluate()
                     model.train()
                     print(self._pbar_header)
@@ -175,7 +174,7 @@ class TrainWrapper(BaseTrainingWrapper):
     def periodic_log(self, batch):
         assert self.is_main
         # model logging
-        if self._cur_iter % self.model_log_interval == 0:
+        if self._cur_iter % self.cfg.model_log_interval == 0:
             self.model.eval()
             model = unwrap_model(self.model)
             if hasattr(model, 'study'):
@@ -184,7 +183,7 @@ class TrainWrapper(BaseTrainingWrapper):
             self.model.train()
 
         # Weights & Biases logging
-        if self._cur_iter % self.wandb_log_interval == 0:
+        if self._cur_iter % self.cfg.wandb_log_interval == 0:
             imgs = batch if torch.is_tensor(batch) else batch[0]
             assert torch.is_tensor(imgs)
             N = min(16, imgs.shape[0])
@@ -262,8 +261,8 @@ def print_json_like(dict_of_list):
 
 
 def main():
-    cfg = parse_args()
-    TrainWrapper(cfg)
+    trainer = TrainWrapper()
+    trainer.main()
 
 
 if __name__ == '__main__':
