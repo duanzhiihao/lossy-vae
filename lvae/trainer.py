@@ -1,3 +1,4 @@
+from tqdm import tqdm
 from pathlib import Path
 from collections import defaultdict
 import os
@@ -9,6 +10,7 @@ import torch.distributed
 import torch.cuda.amp as amp
 import torchvision as tv
 import wandb
+from torch.nn.parallel import DistributedDataParallel as DDP
 from timm.utils import ModelEmaV2, unwrap_model, random_seed
 
 import lvae.utils as utils
@@ -19,7 +21,10 @@ class BaseTrainingWrapper():
     # overwrite these values in the child class if necessary
     grad_norm_interval = 100
 
-    def __init__(self) -> None:
+    def __init__(self, cfg):
+        self.cfg = cfg
+
+        # initialize the training status
         self._cur_epoch = 0
         self._cur_iter  = 0
         self._best_loss = math.inf
@@ -36,6 +41,29 @@ class BaseTrainingWrapper():
         self.world_size  = int(os.environ.get('WORLD_SIZE', 1))
         self.distributed = (self.world_size > 1)
         self.is_main     = self.local_rank in (-1, 0)
+
+    def main(self):
+        # preparation
+        self.set_logging()
+        self.set_device()
+        self.prepare_configs()
+        self.set_dataset()
+        self.set_model()
+        self.set_optimizer()
+        self.set_pretrain()
+
+        # logging
+        self.ema = None
+        if self.is_main:
+            self.set_wandb()
+            self.set_ema()
+
+        # DDP mode
+        if self.distributed:
+            self.model = DDP(self.model, device_ids=[self.local_rank], output_device=self.local_rank)
+
+        # the main training loops
+        self.training_loops()
 
     def set_logging(self):
         cfg = self.cfg
@@ -285,7 +313,69 @@ class BaseTrainingWrapper():
         self.ema = ema
 
     def training_loops(self):
-        raise NotImplementedError()
+        cfg = self.cfg
+        model = self.model
+
+        # ======================== initialize logging ========================
+        pbar = range(self._cur_iter, cfg.iterations)
+        if self.is_main:
+            pbar = tqdm(pbar)
+            self.init_progress_table()
+        # ======================== start training ========================
+        for step in pbar:
+            self._cur_iter  = step
+            self._cur_epoch = step / self._epoch_len
+
+            # evaluation
+            if self.is_main:
+                if cfg.model_val_interval <= 0: # no evaluation
+                    pass
+                elif (step == 0) and (not cfg.eval_first): # first iteration
+                    pass
+                elif step % cfg.model_val_interval == 0: # evaluaion
+                    self.evaluate()
+                    model.train()
+                    print(self._pbar_header)
+
+            # learning rate schedule
+            if step % 10 == 0:
+                self.adjust_lr(step, cfg.iterations)
+
+            # DDP sampler: make sure each epoch has different random seed
+            if self.distributed:
+                self.trainsampler.set_epoch(step)
+
+            # training step
+            assert model.training
+            batch = next(self.trainloader)
+            stats = model(batch)
+            loss = stats['loss'] / float(cfg.accum_num)
+            loss.backward() # gradients are averaged over devices in DDP mode
+            # parameter update
+            if step % cfg.accum_num == 0:
+                grad_norm, bad = self.gradient_clip(model.parameters())
+                self.optimizer.step()
+                self.optimizer.zero_grad()
+
+                if (self.ema is not None) and not bad:
+                    _warmup = cfg.ema_warmup or (cfg.iterations // 20)
+                    self.ema.decay = cfg.ema_decay * (1 - math.exp(-step / _warmup))
+                    self.ema.update(model)
+
+            # sanity check
+            if torch.isnan(loss).any() or torch.isinf(loss).any():
+                logging.error(f'loss = {loss}')
+                self.clean_and_exit()
+
+            # logging
+            if self.is_main:
+                self.minibatch_log(pbar, stats)
+                self.periodic_log(batch)
+
+        self._cur_iter += 1
+        if self.is_main:
+            self.evaluate()
+            logging.info(f'Training finished. results: \n {self._results}')
 
     def gradient_clip(self, parameters):
         grad_norm = torch.nn.utils.clip_grad_norm_(parameters, self.cfg.grad_clip)
@@ -367,17 +457,13 @@ class BaseTrainingWrapper():
 
             _log_dic = {
                 'general/lr': self.optimizer.param_groups[0]['lr'],
-                'general/grad_norm': self._moving_max_grad_norm,
-                # 'ema/n_updates': (self.ema.updates if self.ema else 0),
-                # 'ema/decay': (self.ema.get_decay() if self.ema else 0)
+                'general/grad_norm': self._moving_grad_norm_buffer.max(),
                 'ema/decay': (self.ema.decay if self.ema else 0)
             }
             _log_dic.update(
                 {'train/'+k: self.stats_table[k] for k in self.wandb_log_keys}
             )
             self.wbrun.log(_log_dic, step=self._cur_iter)
-            # reset running max grad norm
-            self._moving_max_grad_norm = 0.0
 
     def eval_model(self, model) -> dict:
         raise NotImplementedError
@@ -392,6 +478,7 @@ class BaseTrainingWrapper():
         }
         model_ = unwrap_model(self.model).eval()
         results = self.eval_model(model_)
+        logging.info(f'Validation results (no EMA): {results}')
         utils.print_dict_as_table(results)
         _log_dic.update({'val-metrics/plain_'+k: v for k,v in results.items()})
         # save last checkpoint
@@ -399,7 +486,6 @@ class BaseTrainingWrapper():
             'model'     : model_.state_dict(),
             'optimizer' : self.optimizer.state_dict(),
             'scaler'    : self.scaler.state_dict(),
-            # loop_name   : loop_step,
             'epoch': self._cur_epoch,
             'iter':  self._cur_iter,
             'results'   : results,
@@ -408,8 +494,8 @@ class BaseTrainingWrapper():
         self._save_if_best(checkpoint)
 
         if self.cfg.ema:
-            no_ema_loss = results['loss']
-            results = self.eval_model(self.ema.module)
+            results = self.eval_model(self.ema.module.eval())
+            logging.info(f'Validation results (EMA): {results}')
             utils.print_dict_as_table(results)
             _log_dic.update({f'val-metrics/ema_'+k: v for k,v in results.items()})
             # save last checkpoint of EMA

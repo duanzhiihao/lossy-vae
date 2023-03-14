@@ -1,11 +1,7 @@
-from tqdm import tqdm
 import json
 import logging
 import argparse
-import math
 import torch
-import torchvision as tv
-from torch.nn.parallel import DistributedDataParallel as DDP
 from timm.utils import unwrap_model
 
 from lvae.utils.coding import bd_rate
@@ -47,7 +43,6 @@ def parse_args():
     parser.add_argument('--grad_clip',  type=float,default=2.0)
     # training iterations setting
     parser.add_argument('--iterations', type=int,  default=2_000_000)
-    # parser.add_argument('--eval_itv',   type=int,  default=2000)
     parser.add_argument('--eval_first', action=argparse.BooleanOptionalAction, default=False)
     # exponential moving averaging (EMA)
     parser.add_argument('--ema',        action=argparse.BooleanOptionalAction, default=True)
@@ -68,33 +63,6 @@ def parse_args():
 
 
 class TrainWrapper(BaseTrainingWrapper):
-    def __init__(self):
-        super().__init__()
-        self.cfg = parse_args()
-
-    def main(self):
-        # preparation
-        self.set_logging()
-        self.set_device()
-        self.prepare_configs()
-        self.set_dataset()
-        self.set_model()
-        self.set_optimizer()
-        self.set_pretrain()
-
-        # logging
-        self.ema = None
-        if self.is_main:
-            self.set_wandb()
-            self.set_ema()
-
-        # DDP mode
-        if self.distributed:
-            self.model = DDP(self.model, device_ids=[self.local_rank], output_device=self.local_rank)
-
-        # the main training loops
-        self.training_loops()
-
     def set_dataset(self):
         cfg = self.cfg
 
@@ -114,99 +82,6 @@ class TrainWrapper(BaseTrainingWrapper):
         self.trainsampler = sampler
         self.val_img_dir = val_img_dir
         self.cfg.epochs  = float(cfg.iterations / self._epoch_len)
-
-    def training_loops(self):
-        cfg = self.cfg
-        model = self.model
-
-        # ======================== initialize logging ========================
-        pbar = range(self._cur_iter, cfg.iterations)
-        if self.is_main:
-            pbar = tqdm(pbar)
-            self.init_progress_table()
-        # ======================== start training ========================
-        for step in pbar:
-            self._cur_iter  = step
-            self._cur_epoch = step / self._epoch_len
-
-            # evaluation
-            if self.is_main:
-                if cfg.model_val_interval <= 0: # no evaluation
-                    pass
-                elif (step == 0) and (not cfg.eval_first): # first iteration
-                    pass
-                elif step % cfg.model_val_interval == 0: # evaluaion
-                    self.evaluate()
-                    model.train()
-                    print(self._pbar_header)
-
-            # learning rate schedule
-            if step % 10 == 0:
-                self.adjust_lr(step, cfg.iterations)
-
-            # DDP sampler: make sure each epoch has different random seed
-            if self.distributed:
-                self.trainsampler.set_epoch(step)
-
-            # training step
-            assert model.training
-            batch = next(self.trainloader)
-            stats = model(batch)
-            loss = stats['loss'] / float(cfg.accum_num)
-            loss.backward() # gradients are averaged over devices in DDP mode
-            # parameter update
-            if step % cfg.accum_num == 0:
-                grad_norm, bad = self.gradient_clip(model.parameters())
-                self.optimizer.step()
-                self.optimizer.zero_grad()
-
-                if (self.ema is not None) and not bad:
-                    _warmup = cfg.ema_warmup or (cfg.iterations // 20)
-                    self.ema.decay = cfg.ema_decay * (1 - math.exp(-step / _warmup))
-                    self.ema.update(model)
-
-            # sanity check
-            if torch.isnan(loss).any() or torch.isinf(loss).any():
-                logging.error(f'loss = {loss}')
-                self.clean_and_exit()
-
-            # logging
-            if self.is_main:
-                self.minibatch_log(pbar, stats)
-                self.periodic_log(batch)
-
-        self._cur_iter += 1
-        if self.is_main:
-            self.evaluate()
-            logging.info(f'Training finished. results: \n {self._results}')
-
-    def periodic_log(self, batch):
-        assert self.is_main
-        # model logging
-        if self._cur_iter % self.cfg.model_log_interval == 0:
-            self.model.eval()
-            model = unwrap_model(self.model)
-            if hasattr(model, 'study'):
-                model.study(save_dir=self._log_dir, wandb_run=self.wbrun)
-                self.ema.module.study(save_dir=self._log_dir/'ema')
-            self.model.train()
-
-        # Weights & Biases logging
-        if self._cur_iter % self.cfg.wandb_log_interval == 0:
-            imgs = batch if torch.is_tensor(batch) else batch[0]
-            assert torch.is_tensor(imgs)
-            N = min(16, imgs.shape[0])
-            tv.utils.save_image(imgs[:N], fp=self._log_dir / 'inputs.png', nrow=math.ceil(N**0.5))
-
-            _log_dic = {
-                'general/lr': self.optimizer.param_groups[0]['lr'],
-                'general/grad_norm': self._moving_grad_norm_buffer.max(),
-                'ema/decay': (self.ema.decay if self.ema else 0)
-            }
-            _log_dic.update(
-                {'train/'+k: self.stats_table[k] for k in self.wandb_log_keys}
-            )
-            self.wbrun.log(_log_dic, step=self._cur_iter)
 
     @torch.no_grad()
     def evaluate(self):
@@ -274,13 +149,6 @@ class TrainWrapper(BaseTrainingWrapper):
         results['loss'] = bdr
         results['bd-rate'] = bdr
         print_json_like(results)
-        # draw R-D curve
-        # data = [[b,p] for b,p in zip(results['bpp'], results['psnr'])]
-        # table = wandb.Table(data=data, columns=['bpp', 'psnr'])
-        # self.wbrun.log(
-        #     {'psnr-rate' : wandb.plot.line(table, 'bpp', 'psnr', title='PSNR-Rate plot')},
-        #     step=self._cur_iter
-        # )
         return results_to_log
 
 def read_rd_stats_from_json(json_path):
@@ -314,7 +182,8 @@ def print_json_like(dict_of_list):
 
 
 def main():
-    trainer = TrainWrapper()
+    cfg = parse_args()
+    trainer = TrainWrapper(cfg)
     trainer.main()
 
 

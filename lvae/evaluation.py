@@ -34,7 +34,7 @@ def imcoding_evaluate(model: torch.nn.Module, dataset: str):
     # temp folder to save bits
     tmp_bits_dir = Path(gettempdir())
     # start for-loop
-    pbar = tqdm(img_paths)
+    pbar = tqdm(img_paths, ascii=True)
     all_image_stats = defaultdict(AverageMeter)
     for impath in pbar:
         tmp_bits_path = tmp_bits_dir / f'{impath.stem}.bits'
@@ -68,7 +68,7 @@ def imcoding_evaluate(model: torch.nn.Module, dataset: str):
 
 
 @torch.no_grad()
-def image_self_evaluate(model: torch.nn.Module, dataset: str):
+def image_self_evaluate(model: torch.nn.Module, dataset: str, progress=True):
     """ Evaluate the model on a dataset with the model's `forward()` function.
     Typically, no entropy coding is used.
 
@@ -84,7 +84,7 @@ def image_self_evaluate(model: torch.nn.Module, dataset: str):
     root = known_datasets.get(dataset, Path(dataset))
     img_paths = sorted(root.rglob('*.*'))
     # evaluate on all images and average the results
-    pbar = tqdm(img_paths)
+    pbar = tqdm(img_paths, ascii=True) if progress else img_paths
     all_image_stats = defaultdict(AverageMeter)
     for impath in pbar:
         img = Image.open(impath)
@@ -99,7 +99,8 @@ def image_self_evaluate(model: torch.nn.Module, dataset: str):
             all_image_stats[k].update(v)
         # logging
         msg = ', '.join([f'{k}={v:.3f}' for k,v in stats.items()])
-        pbar.set_description(f'image {impath.stem}: {msg}')
+        if progress:
+            pbar.set_description(f'image {impath.stem}: {msg}')
 
     # average over all images
     results = {k: meter.avg for k,meter in all_image_stats.items()}
