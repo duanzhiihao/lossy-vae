@@ -1,9 +1,11 @@
 from PIL import Image
 from pathlib import Path
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset
 import torchvision as tv
 
 from lvae.paths import known_datasets
+
+__all__ = ['ImageDataset', 'get_image_dateset']
 
 
 class ImageDataset(Dataset):
@@ -24,7 +26,7 @@ class ImageDataset(Dataset):
         return im
 
 
-def get_dateset(name: str, transform_cfg: str=None) -> Dataset:
+def get_image_dateset(name: str, transform_cfg: str=None) -> Dataset:
     """ get image dataset from name
 
     Args:
@@ -48,10 +50,3 @@ def get_dateset(name: str, transform_cfg: str=None) -> Dataset:
     # find dataset root, and initialize dataset
     dataset = ImageDataset(root=known_datasets.get(name, name), transform=transform)
     return dataset
-
-
-def make_generator(dataset, batch_size, workers):
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, drop_last=True,
-                            num_workers=workers, pin_memory=True)
-    while True:
-        yield from dataloader

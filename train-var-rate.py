@@ -11,7 +11,7 @@ from timm.utils import unwrap_model
 from lvae.utils.coding import bd_rate
 from lvae.paths import known_datasets
 from lvae.trainer import BaseTrainingWrapper
-from lvae.datasets.image import get_dateset, make_generator
+from lvae.datasets import get_image_dateset, make_trainloader
 
 
 def parse_args():
@@ -99,8 +99,8 @@ class TrainWrapper(BaseTrainingWrapper):
         cfg = self.cfg
 
         logging.info('==== Datasets and Dataloaders ====')
-        trainset = get_dateset(cfg.trainset, transform_cfg=cfg.transform)
-        trainloader = make_generator(trainset, batch_size=cfg.batch_size, workers=cfg.workers)
+        trainset = get_image_dateset(cfg.trainset, transform_cfg=cfg.transform)
+        trainloader, sampler = make_trainloader(trainset, batch_size=cfg.batch_size, workers=cfg.workers)
         logging.info(f'Training root: {trainset.root}')
         logging.info(f'Number of training images = {len(trainset)}')
         logging.info(f'Training transform: \n{str(trainset.transform)}')
@@ -111,6 +111,7 @@ class TrainWrapper(BaseTrainingWrapper):
 
         self._epoch_len  = len(trainset) / cfg.bs_effective
         self.trainloader = trainloader
+        self.trainsampler = sampler
         self.val_img_dir = val_img_dir
         self.cfg.epochs  = float(cfg.iterations / self._epoch_len)
 
@@ -142,6 +143,10 @@ class TrainWrapper(BaseTrainingWrapper):
             # learning rate schedule
             if step % 10 == 0:
                 self.adjust_lr(step, cfg.iterations)
+
+            # DDP sampler: make sure each epoch has different random seed
+            if self.distributed:
+                self.trainsampler.set_epoch(step)
 
             # training step
             assert model.training
