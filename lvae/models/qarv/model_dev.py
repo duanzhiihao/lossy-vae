@@ -16,6 +16,61 @@ import lvae.models.common as common
 import lvae.models.entropy_coding as entropy_coding
 
 
+class ConvNeXtBlockAdaLNSoftPlus(nn.Module):
+    softplus_beta = math.log(2)
+    default_embedding_dim = 256
+    def __init__(self, dim, embed_dim=None, out_dim=None, kernel_size=7, mlp_ratio=2,
+                 residual=True, ls_init_value=1e-6):
+        super().__init__()
+        # depthwise conv
+        pad = (kernel_size - 1) // 2
+        self.conv_dw = nn.Conv2d(dim, dim, kernel_size=kernel_size, padding=pad, groups=dim)
+        # layer norm
+        self.norm = nn.LayerNorm(dim, eps=1e-6, elementwise_affine=False)
+        self.norm.affine = False # for FLOPs computing
+        # AdaLN
+        embed_dim = embed_dim or self.default_embedding_dim
+        self.embedding_layer = nn.Sequential(
+            nn.GELU(),
+            nn.Linear(embed_dim, 2*dim),
+            nn.Unflatten(1, unflattened_size=(1, 1, 2*dim))
+        )
+        # MLP
+        hidden = int(mlp_ratio * dim)
+        out_dim = out_dim or dim
+        from timm.layers.mlp import Mlp
+        self.mlp = Mlp(dim, hidden_features=hidden, out_features=out_dim, act_layer=nn.GELU)
+        # layer scaling
+        if ls_init_value >= 0:
+            self.gamma = nn.Parameter(torch.full(size=(1, out_dim, 1, 1), fill_value=1e-6))
+        else:
+            self.gamma = None
+
+        self.residual = residual
+        self.requires_embedding = True
+
+    def forward(self, x, emb):
+        shortcut = x
+        # depthwise conv
+        x = self.conv_dw(x)
+        # layer norm
+        x = x.permute(0, 2, 3, 1).contiguous()
+        x = self.norm(x)
+        # AdaLN
+        embedding = self.embedding_layer(emb)
+        shift, scale = torch.chunk(embedding, chunks=2, dim=-1)
+        x = x * tnf.softplus(scale, beta=self.softplus_beta) + shift
+        # MLP
+        x = self.mlp(x)
+        x = x.permute(0, 3, 1, 2).contiguous()
+        # scaling
+        if self.gamma is not None:
+            x = x.mul(self.gamma)
+        if self.residual:
+            x = x + shortcut
+        return x
+
+
 class VRLVBlockBase(nn.Module):
     """ Vriable-Rate Latent Variable Block
     """
@@ -122,6 +177,32 @@ class VRLVBlockBase(nn.Module):
 
     def update(self):
         self.discrete_gaussian.update()
+
+
+class VRLVBlockBaseSoftplus(VRLVBlockBase):
+    """ Vriable-Rate Latent Variable Block
+    """
+    default_embedding_dim = 256
+    def __init__(self, width, zdim, enc_key, enc_width, embed_dim=None, **kwargs):
+        super(VRLVBlockBase, self).__init__()
+        self.in_channels  = width
+        self.out_channels = width
+        self.enc_key = enc_key
+
+        block = ConvNeXtBlockAdaLNSoftPlus
+        embed_dim = embed_dim or self.default_embedding_dim
+        self.resnet_front = block(width,   embed_dim, **kwargs)
+        self.resnet_end   = block(width,   embed_dim, **kwargs)
+        self.posterior0 = block(enc_width, embed_dim, **kwargs)
+        self.posterior1 = block(width,     embed_dim, **kwargs)
+        self.posterior2 = block(width,     embed_dim, **kwargs)
+        self.post_merge = common.conv_k1s1(width + enc_width, width)
+        self.posterior  = common.conv_k3s1(width, zdim)
+        self.z_proj     = common.conv_k1s1(zdim, width)
+        self.prior      = common.conv_k1s1(width, zdim*2)
+
+        self.discrete_gaussian = entropy_coding.DiscretizedGaussian()
+        self.is_latent_block = True
 
 
 class VRLVBlockSmall(VRLVBlockBase):
