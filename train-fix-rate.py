@@ -1,15 +1,9 @@
-from tqdm import tqdm
 import logging
 import argparse
-import math
-import torch
-import torchvision as tv
-from torch.nn.parallel import DistributedDataParallel as DDP
-from timm.utils import unwrap_model
 
-from lvae.paths import known_datasets
 from lvae.trainer import BaseTrainingWrapper
 from lvae.datasets import get_image_dateset, make_trainloader
+from lvae.evaluation import image_self_evaluate
 
 
 def parse_args():
@@ -64,33 +58,6 @@ def parse_args():
 
 
 class TrainWrapper(BaseTrainingWrapper):
-    def __init__(self):
-        super().__init__()
-        self.cfg = parse_args()
-
-    def main(self):
-        # preparation
-        self.set_logging()
-        self.set_device()
-        self.prepare_configs()
-        self.set_dataset()
-        self.set_model()
-        self.set_optimizer()
-        self.set_pretrain()
-
-        # logging
-        self.ema = None
-        if self.is_main:
-            self.set_wandb()
-            self.set_ema()
-
-        # DDP mode
-        if self.distributed:
-            self.model = DDP(self.model, device_ids=[self.local_rank], output_device=self.local_rank)
-
-        # the main training loops
-        self.training_loops()
-
     def set_dataset(self):
         cfg = self.cfg
 
@@ -101,172 +68,19 @@ class TrainWrapper(BaseTrainingWrapper):
         logging.info(f'Number of training images = {len(trainset)}')
         logging.info(f'Training transform: \n{str(trainset.transform)}')
 
-        # test set
-        val_img_dir = known_datasets[cfg.valset]
-        logging.info(f'Validation root: {val_img_dir} \n')
-
         self._epoch_len  = len(trainset) / cfg.bs_effective
         self.trainloader = trainloader
         self.trainsampler = sampler
-        self.val_img_dir = val_img_dir
         self.cfg.epochs  = float(cfg.iterations / self._epoch_len)
 
-    def training_loops(self):
-        cfg = self.cfg
-        model = self.model
-
-        # ======================== initialize logging ========================
-        pbar = range(self._cur_iter, cfg.iterations)
-        if self.is_main:
-            pbar = tqdm(pbar)
-            self.init_progress_table()
-        # ======================== start training ========================
-        for step in pbar:
-            self._cur_iter  = step
-            self._cur_epoch = step / self._epoch_len
-
-            # evaluation
-            if self.is_main:
-                if cfg.model_val_interval <= 0: # no evaluation
-                    pass
-                elif (step == 0) and (not cfg.eval_first): # first iteration
-                    pass
-                elif step % cfg.model_val_interval == 0: # evaluaion
-                    self.evaluate()
-                    model.train()
-                    print(self._pbar_header)
-
-            # learning rate schedule
-            if step % 10 == 0:
-                self.adjust_lr(step, cfg.iterations)
-
-            # DDP sampler: make sure each epoch has different random seed
-            if self.distributed:
-                self.trainsampler.set_epoch(step)
-
-            # training step
-            assert model.training
-            batch = next(self.trainloader)
-            stats = model(batch)
-            loss = stats['loss'] / float(cfg.accum_num)
-            loss.backward() # gradients are averaged over devices in DDP mode
-            # parameter update
-            if step % cfg.accum_num == 0:
-                grad_norm, bad = self.gradient_clip(model.parameters())
-                self.optimizer.step()
-                self.optimizer.zero_grad()
-
-                if (self.ema is not None) and not bad:
-                    _warmup = cfg.ema_warmup or (cfg.iterations // 20)
-                    self.ema.decay = cfg.ema_decay * (1 - math.exp(-step / _warmup))
-                    self.ema.update(model)
-
-            # sanity check
-            if torch.isnan(loss).any() or torch.isinf(loss).any():
-                logging.error(f'loss = {loss}')
-                self.clean_and_exit()
-
-            # logging
-            if self.is_main:
-                self.minibatch_log(pbar, stats)
-                self.periodic_log(batch)
-
-        self._cur_iter += 1
-        if self.is_main:
-            self.evaluate()
-            logging.info(f'Training finished. results: \n {self._results}')
-
-    def periodic_log(self, batch):
-        assert self.is_main
-        # model logging
-        if self._cur_iter % self.cfg.model_log_interval == 0:
-            self.model.eval()
-            model = unwrap_model(self.model)
-            if hasattr(model, 'study'):
-                model.study(save_dir=self._log_dir, wandb_run=self.wbrun)
-                self.ema.module.study(save_dir=self._log_dir/'ema')
-            self.model.train()
-
-        # Weights & Biases logging
-        if self._cur_iter % self.cfg.wandb_log_interval == 0:
-            imgs = batch if torch.is_tensor(batch) else batch[0]
-            assert torch.is_tensor(imgs)
-            N = min(16, imgs.shape[0])
-            tv.utils.save_image(imgs[:N], fp=self._log_dir / 'inputs.png', nrow=math.ceil(N**0.5))
-
-            _log_dic = {
-                'general/lr': self.optimizer.param_groups[0]['lr'],
-                'general/grad_norm': self._moving_grad_norm_buffer.max(),
-                'ema/decay': (self.ema.decay if self.ema else 0)
-            }
-            _log_dic.update(
-                {'train/'+k: self.stats_table[k] for k in self.wandb_log_keys}
-            )
-            self.wbrun.log(_log_dic, step=self._cur_iter)
-
-    @torch.no_grad()
-    def evaluate(self):
-        assert self.is_main
-        log_dir = self._log_dir
-
-        # Evaluation
-        _log_dic = {
-            'general/epoch': self._cur_epoch,
-            'general/iter':  self._cur_iter
-        }
-        model_ = unwrap_model(self.model).eval()
-        results = model_.self_evaluate(self.val_img_dir, log_dir=log_dir)
-        print_json_like(results)
-
-        _log_dic.update({'val-metrics/plain-'+k: v for k,v in results.items()})
-        # save last checkpoint
-        checkpoint = {
-            'model'     : model_.state_dict(),
-            'optimizer' : self.optimizer.state_dict(),
-            'scaler'    : self.scaler.state_dict(),
-            'epoch': self._cur_epoch,
-            'iter':  self._cur_iter,
-            'results'   : results,
-        }
-        torch.save(checkpoint, log_dir / 'last.pt')
-        self._save_if_best(checkpoint)
-
-        if self.cfg.ema:
-            results = self.ema.module.self_evaluate(self.val_img_dir, log_dir=log_dir)
-            print_json_like(results)
-            _log_dic.update({'val-metrics/ema-'+k: v for k,v in results.items()})
-            # save last checkpoint of EMA
-            checkpoint = {
-                'model': self.ema.module.state_dict(),
-                'epoch': self._cur_epoch,
-                'iter':  self._cur_iter,
-                'results' : results,
-            }
-            torch.save(checkpoint, log_dir / 'last_ema.pt')
-            self._save_if_best(checkpoint)
-
-        # wandb log
-        self.wbrun.log(_log_dic, step=self._cur_iter)
-        # Log evaluation results to file
-        msg = self.stats_table.get_body() + '||' + '%10.4g' * 1 % (results['loss'])
-        with open(log_dir / 'results.txt', 'a') as f:
-            f.write(msg + '\n')
-
-        self._results = results
-        print()
-
-
-def print_json_like(dict_of_list):
-    for k, value in dict_of_list.items():
-        if isinstance(value, list):
-            vlist_str = '[' + ', '.join([f'{v:.12f}'[:6] for v in value]) + ']'
-        else:
-            vlist_str = value
-        logging.info(f"'{k:<6s}': {vlist_str}")
+    def eval_model(self, model) -> dict:
+        results = image_self_evaluate(model, dataset=self.cfg.valset, progress=False)
+        return results
 
 
 def main():
-    trainer = TrainWrapper()
+    cfg = parse_args()
+    trainer = TrainWrapper(cfg)
     trainer.main()
 
 
