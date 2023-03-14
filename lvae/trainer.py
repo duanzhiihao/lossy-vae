@@ -16,9 +16,7 @@ from lvae.models.registry import get_model
 
 
 class BaseTrainingWrapper():
-    # override these values in the child class
-    wandb_log_interval = 100
-    model_log_interval = 1000
+    # overwrite these values in the child class if necessary
     grad_norm_interval = 100
 
     def __init__(self) -> None:
@@ -72,17 +70,17 @@ class BaseTrainingWrapper():
         self._log_dir = log_dir
 
     def set_device(self):
-        local_rank = self.local_rank
+        local_rank = max(self.local_rank, 0)
         world_size = self.world_size
 
-        torch.cuda.set_device(max(local_rank, 0))
+        torch.cuda.set_device(local_rank)
         torch.cuda.empty_cache()
         _count = torch.cuda.device_count()
+        _info = torch.cuda.get_device_properties(local_rank)
 
         if world_size == 1: # standard single GPU mode
-            assert (local_rank == -1) and self.is_main
-            logging.info(f'Visible devices={_count}, using idx 0: {torch.cuda.get_device_properties(0)} \n')
-            local_rank = 0 # just for selecting device 0
+            assert (local_rank == 0) and self.is_main
+            logging.info(f'Total {_count} visible devices, using idx 0: {_info} \n')
         else: # DDP mode
             assert torch.distributed.is_nccl_available()
             torch.distributed.init_process_group(backend="nccl")
@@ -90,8 +88,7 @@ class BaseTrainingWrapper():
             assert world_size == torch.distributed.get_world_size()
 
             time.sleep(0.1 * local_rank)
-            print(f'local_rank={local_rank}, world_size={world_size}, total visible={_count}')
-            print(f'{torch.cuda.get_device_properties(local_rank)} \n')
+            print(f'local_rank={local_rank}, world_size={world_size} \n{_info} \n')
             torch.distributed.barrier()
 
         self.device = torch.device('cuda', local_rank)
@@ -103,27 +100,21 @@ class BaseTrainingWrapper():
             random_seed(2 + self.local_rank)
         torch.backends.cudnn.benchmark = True
 
-        logging.info(f'Batch size on each dataloader (ie, GPU) = {cfg.batch_size}')
-        logging.info(f'Gradient accmulation: {cfg.accum_num} backwards() -> one step()')
+        logging.info(f'Batch size on each GPU = {cfg.batch_size}')
+        logging.info(f'Gradient accmulation: {cfg.accum_num} backwards() -> one optimizer.step()')
         bs_effective = cfg.batch_size * self.world_size * cfg.accum_num
         msg = f'Effective batch size = {bs_effective}, learning rate = {cfg.lr}, ' + \
-              f'weight decay = {cfg.wdecay}'
+              f'weight decay = {cfg.wdecay} \n'
         logging.info(msg)
-        lr_per_1024img = cfg.lr / bs_effective * 1024
-        logging.info(f'Learning rate per 1024 images = {lr_per_1024img}')
-        wd_per_1024img = cfg.wdecay / bs_effective * 1024
-        logging.info(f'Weight decay per 1024 images = {wd_per_1024img} \n')
         logging.info(f'Training config: \n{cfg} \n')
 
         cfg.bs_effective = bs_effective
         cfg.world_size = self.world_size
 
-        self.wandb_log_interval = cfg.log_itv
-        self._log_ema_weight = 5.0 / (self.wandb_log_interval + 8.0)
+        self._log_ema_weight = 5.0 / (cfg.wandb_log_interval + 8.0)
         _m = 1 - self._log_ema_weight
         msg = f'train metrics avg weight={self._log_ema_weight:.4f}, momentum={_m:.4f} \n'
         logging.info(msg)
-        self.model_log_interval = cfg.study_itv
 
     def set_dataset(self):
         self._epoch_len: int
@@ -136,7 +127,8 @@ class BaseTrainingWrapper():
         assert isinstance(model, torch.nn.Module)
 
         cfg.num_param = sum([p.numel() for p in model.parameters() if p.requires_grad])
-        logging.info(f'Using model name={cfg.model}, {type(model)}, args = {kwargs}')
+        logging.info('==== Model ====')
+        logging.info(f'Model name = {cfg.model}, type = {type(model)}, args = {kwargs}')
         logging.info(f'Number of learnable parameters = {cfg.num_param/1e6} M \n')
         if self.is_main:
             utils.print_to_file(str(model), fpath=self._log_dir / 'model.txt', mode='w')
@@ -168,6 +160,7 @@ class BaseTrainingWrapper():
             {'params': pgo, 'lr': cfg.lr, 'weight_decay': 0.0}
         ]
         # logging
+        logging.info('==== Optimizer ====')
         for pg in parameters:
             num_, lr_, wd_ = len(pg['params']), pg['lr'], pg['weight_decay']
             msg = f'num={num_:<4}, lr={lr_}, weight_decay={wd_}'
@@ -180,12 +173,11 @@ class BaseTrainingWrapper():
 
         # optimizer
         if cfg.optimizer == 'sgd':
-            cfg.sgd_momentum = 0.9
-            optimizer = torch.optim.SGD(parameters, lr=cfg.lr, momentum=cfg.sgd_momentum)
+            optimizer = torch.optim.SGD(parameters, lr=cfg.lr, momentum=0.9, weight_decay=cfg.wdecay)
         elif cfg.optimizer == 'adam':
-            optimizer = torch.optim.Adam(parameters, lr=cfg.lr)
+            optimizer = torch.optim.Adam(parameters, lr=cfg.lr, weight_decay=cfg.wdecay)
         elif cfg.optimizer == 'adamax':
-            optimizer = torch.optim.Adamax(parameters, lr=cfg.lr)
+            optimizer = torch.optim.Adamax(parameters, lr=cfg.lr, weight_decay=cfg.wdecay)
         else:
             raise ValueError(f'Unknown optimizer: {cfg.optimizer}')
 
@@ -280,7 +272,7 @@ class BaseTrainingWrapper():
         if cfg.ema:
             ema = ModelEmaV2(self.model, decay=cfg.ema_decay)
 
-            msg = f'Using EMA with decay={cfg.ema_decay}.'
+            msg = f'Training uses EMA with decay = {cfg.ema_decay}.'
             if cfg.resume:
                 ckpt_path = self._log_dir / 'last_ema.pt'
                 assert ckpt_path.is_file(), f'Cannot find EMA checkpoint: {ckpt_path}'
@@ -345,7 +337,7 @@ class BaseTrainingWrapper():
             if prev == 0.0:
                 new = v
             else: # exponential moving average
-                assert self.wandb_log_interval >= 2
+                assert cfg.wandb_log_interval >= 2
                 new = (1 - self._log_ema_weight) * prev + self._log_ema_weight * v
             self.stats_table[k] = new
             self.wandb_log_keys.add(k)
@@ -359,7 +351,7 @@ class BaseTrainingWrapper():
     @torch.no_grad()
     def periodic_log(self, batch):
         # model logging
-        if self._cur_iter % self.model_log_interval == 0:
+        if self._cur_iter % self.cfg.model_log_interval == 0:
             self.model.eval()
             _model = unwrap_model(self.model)
             if hasattr(_model, 'study'):
@@ -367,7 +359,7 @@ class BaseTrainingWrapper():
             self.model.train()
 
         # Weights & Biases logging
-        if self._cur_iter % self.wandb_log_interval == 0:
+        if self._cur_iter % self.cfg.wandb_log_interval == 0:
             imgs = batch if torch.is_tensor(batch) else batch[0]
             assert torch.is_tensor(imgs)
             N = min(16, imgs.shape[0])

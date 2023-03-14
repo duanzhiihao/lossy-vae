@@ -15,7 +15,7 @@ QARV (Quantization-Aware ResNet VAE) is an improved version of QRes-VAE.
 
 |     Name    |  `lmb_range` | Param | Bpp range (Kodak) | Kodak BD-rate | Tecknick BD-rate | CLIC BD-rate |
 |:-----------:|:------------:|:-----:|:-----------------:|:-------------:|:----------------:|:------------:|
-| `qarv_base` | `[16, 2048]` | 93.4M |   0.217 - 2.219   |      -4.5     |       -8.4       |     -6.7     |
+| `qarv_base` | `[16, 2048]` | 93.4M |   0.208 - 2.210   |     -5.9 %    |      -8.9 %      |    -6.9 %    |
 
 *BD-rate is w.r.t. VTM 18.0, lower is better.
 

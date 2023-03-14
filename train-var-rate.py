@@ -5,14 +5,13 @@ import argparse
 import math
 import torch
 import torchvision as tv
-import wandb
 from torch.nn.parallel import DistributedDataParallel as DDP
 from timm.utils import unwrap_model
 
 from lvae.utils.coding import bd_rate
 from lvae.paths import known_datasets
 from lvae.trainer import BaseTrainingWrapper
-from lvae.datasets.image import get_dateset, make_generator
+from lvae.datasets import get_image_dateset, make_trainloader
 
 
 def parse_args():
@@ -26,7 +25,7 @@ def parse_args():
     parser.add_argument('--wbmode',     type=str,  default='disabled')
     parser.add_argument('--name',       type=str,  default=None)
     # model setting
-    parser.add_argument('--model',      type=str,  default='rd_model_a')
+    parser.add_argument('--model',      type=str,  default='qarv_base')
     parser.add_argument('--model_args', type=str,  default='')
     # resume setting
     parser.add_argument('--resume',     type=str,  default=None)
@@ -48,9 +47,7 @@ def parse_args():
     parser.add_argument('--grad_clip',  type=float,default=2.0)
     # training iterations setting
     parser.add_argument('--iterations', type=int,  default=2_000_000)
-    parser.add_argument('--log_itv',    type=int,  default=100)
-    parser.add_argument('--study_itv',  type=int,  default=2000)
-    parser.add_argument('--eval_itv',   type=int,  default=2000)
+    # parser.add_argument('--eval_itv',   type=int,  default=2000)
     parser.add_argument('--eval_first', action=argparse.BooleanOptionalAction, default=False)
     # exponential moving averaging (EMA)
     parser.add_argument('--ema',        action=argparse.BooleanOptionalAction, default=True)
@@ -61,19 +58,21 @@ def parse_args():
     parser.add_argument('--workers',    type=int,  default=6)
     cfg = parser.parse_args()
 
+    # default settings
     cfg.wdecay = 0.0
     cfg.amp = False
+    cfg.wandb_log_interval = 100
+    cfg.model_log_interval = 2000
+    cfg.model_val_interval = 2000
     return cfg
 
 
 class TrainWrapper(BaseTrainingWrapper):
-    def __init__(self, cfg):
+    def __init__(self):
         super().__init__()
-        self.main(cfg)
+        self.cfg = parse_args()
 
-    def main(self, cfg):
-        self.cfg = cfg
-
+    def main(self):
         # preparation
         self.set_logging()
         self.set_device()
@@ -99,20 +98,20 @@ class TrainWrapper(BaseTrainingWrapper):
     def set_dataset(self):
         cfg = self.cfg
 
-        logging.info('Initializing Datasets and Dataloaders...')
-        trainset = get_dateset(cfg.trainset, transform_cfg=cfg.transform)
-        trainloader = make_generator(trainset, batch_size=cfg.batch_size, workers=cfg.workers)
+        logging.info('==== Datasets and Dataloaders ====')
+        trainset = get_image_dateset(cfg.trainset, transform_cfg=cfg.transform)
+        trainloader, sampler = make_trainloader(trainset, batch_size=cfg.batch_size, workers=cfg.workers)
         logging.info(f'Training root: {trainset.root}')
         logging.info(f'Number of training images = {len(trainset)}')
         logging.info(f'Training transform: \n{str(trainset.transform)}')
 
         # test set
         val_img_dir = known_datasets[cfg.valset]
-        logging.info(f'Val root: {val_img_dir} \n')
+        logging.info(f'Validation root: {val_img_dir} \n')
 
         self._epoch_len  = len(trainset) / cfg.bs_effective
         self.trainloader = trainloader
-        # self.valloader   = valloader
+        self.trainsampler = sampler
         self.val_img_dir = val_img_dir
         self.cfg.epochs  = float(cfg.iterations / self._epoch_len)
 
@@ -132,11 +131,11 @@ class TrainWrapper(BaseTrainingWrapper):
 
             # evaluation
             if self.is_main:
-                if cfg.eval_itv <= 0: # no evaluation
+                if cfg.model_val_interval <= 0: # no evaluation
                     pass
                 elif (step == 0) and (not cfg.eval_first): # first iteration
                     pass
-                elif step % cfg.eval_itv == 0: # evaluate every {cfg.eval_itv} epochs
+                elif step % cfg.model_val_interval == 0: # evaluaion
                     self.evaluate()
                     model.train()
                     print(self._pbar_header)
@@ -144,6 +143,10 @@ class TrainWrapper(BaseTrainingWrapper):
             # learning rate schedule
             if step % 10 == 0:
                 self.adjust_lr(step, cfg.iterations)
+
+            # DDP sampler: make sure each epoch has different random seed
+            if self.distributed:
+                self.trainsampler.set_epoch(step)
 
             # training step
             assert model.training
@@ -180,17 +183,16 @@ class TrainWrapper(BaseTrainingWrapper):
     def periodic_log(self, batch):
         assert self.is_main
         # model logging
-        if self._cur_iter % self.model_log_interval == 0:
+        if self._cur_iter % self.cfg.model_log_interval == 0:
             self.model.eval()
             model = unwrap_model(self.model)
             if hasattr(model, 'study'):
                 model.study(save_dir=self._log_dir, wandb_run=self.wbrun)
-                # self.ema.ema.study(save_dir=self._log_dir/'ema')
                 self.ema.module.study(save_dir=self._log_dir/'ema')
             self.model.train()
 
         # Weights & Biases logging
-        if self._cur_iter % self.wandb_log_interval == 0:
+        if self._cur_iter % self.cfg.wandb_log_interval == 0:
             imgs = batch if torch.is_tensor(batch) else batch[0]
             assert torch.is_tensor(imgs)
             N = min(16, imgs.shape[0])
@@ -198,7 +200,6 @@ class TrainWrapper(BaseTrainingWrapper):
 
             _log_dic = {
                 'general/lr': self.optimizer.param_groups[0]['lr'],
-                # 'general/grad_norm': self._moving_max_grad_norm,
                 'general/grad_norm': self._moving_grad_norm_buffer.max(),
                 'ema/decay': (self.ema.decay if self.ema else 0)
             }
@@ -236,11 +237,8 @@ class TrainWrapper(BaseTrainingWrapper):
         self._save_if_best(checkpoint)
 
         if self.cfg.ema:
-            # no_ema_loss = results['loss']
-            # results = self.eval_model(self.ema.module)
             results = self.ema.module.self_evaluate(self.val_img_dir, log_dir=log_dir, steps=self.cfg.val_steps)
             results_to_log = self.process_log_results(results)
-            # log_json_like(results)
             _log_dic.update({'val-metrics/ema-'+k: v for k,v in results_to_log.items()})
             # save last checkpoint of EMA
             checkpoint = {
@@ -316,8 +314,8 @@ def print_json_like(dict_of_list):
 
 
 def main():
-    cfg = parse_args()
-    TrainWrapper(cfg)
+    trainer = TrainWrapper()
+    trainer.main()
 
 
 if __name__ == '__main__':

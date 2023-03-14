@@ -29,7 +29,7 @@ This project is under active development.
 | Model Name  | CPU* Enc. | CPU* Dec. | 3080 ti Enc. | 3080 ti Dec. | BD-rate* (lower is better) |
 | :---------: | :-------: | :-------: | :----------: | :----------: | :------------------------: |
 |  `qres34m`  |  0.899s   |  0.441s   |    0.116s    |    0.083s    |          -3.95 %           |
-| `qarv_base` |  0.880s   |  0.295s   |    0.096s    |    0.063s    |          -7.26 %           |
+| `qarv_base` |  0.757s   |  0.295s   |    0.096s    |    0.063s    |          -7.26 %           |
 
 </div>
 
