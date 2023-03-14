@@ -1,5 +1,3 @@
-import os
-import re
 import json
 import random
 import logging
@@ -9,11 +7,9 @@ from tempfile import gettempdir
 from collections import OrderedDict
 
 __all__ = [
-    'ANSI', 'my_stream_handler',
-    'query_yes_no', 'increment_dir', 'parse_config_str', 'random_string',
+    'ANSI', 'my_stream_handler', 'query_yes_no', 'increment_dir', 'random_string',
     'get_temp_file_path', 'read_file', 'json_load', 'json_dump', 'print_to_file',
-    'FunctionRegistry', 'SimpleConfig', 'SimpleTable', 'print_dict_as_table',
-    'MaxLengthList',
+    'SimpleTable', 'print_dict_as_table', 'MaxLengthList',
 ]
 
 
@@ -197,6 +193,8 @@ def colorstr_example():
 
 
 class LevelFormatter(logging.Formatter):
+    """ Formatter for logging that uses different colors for different levels.
+    """
     _level_formats = {
         logging.WARNING: ANSI.warningstr('[%(asctime)s] %(message)s'),
         logging.ERROR:   ANSI.errorstr('[%(asctime)s] %(message)s'),
@@ -215,6 +213,11 @@ class LevelFormatter(logging.Formatter):
         return result
 
 def my_stream_handler():
+    """ Create a stream handler with a custom formatter for logging.
+
+    Returns:
+        logging.StreamHandler: a stream handler
+    """
     handler = logging.StreamHandler()
     formatter = LevelFormatter(fmt='[%(asctime)s] %(message)s', datefmt='%Y-%b-%d %H:%M:%S')
     handler.setFormatter(formatter)
@@ -227,6 +230,9 @@ def query_yes_no(question):
 
     Args:
         question (str): a string that is presented to the user.
+
+    Returns:
+        bool: True for 'y' or 'yes', and False for 'n' or 'no'.
     """
     valid = {"yes": True, "y": True, "no": False, "n": False}
 
@@ -245,6 +251,9 @@ def increment_dir(dir_root='runs/', name='exp'):
     Args:
         dir_root (str, optional): root directory. Defaults to 'runs/'.
         name (str, optional): dir prefix. Defaults to 'exp'.
+
+    Returns:
+        str: directory name
     """
     assert isinstance(dir_root, (str, Path))
     dir_root = Path(dir_root)
@@ -260,6 +269,9 @@ def random_string(length: int):
 
     Args:
         length (int): length of the string.
+
+    Returns:
+        str: a random string
     """
     dictionary = 'abcdefghijklmnopqrstuvwxyz0123456789'
     return ''.join(random.choices(dictionary, k=length))
@@ -267,6 +279,12 @@ def random_string(length: int):
 
 def get_temp_file_path(suffix='.tmp'):
     """ Get a temporary file path.
+
+    Args:
+        suffix (str, optional): suffix of the file. Defaults to '.tmp'.
+
+    Returns:
+        Path: a temporary file path
     """
     tmp_path = Path(gettempdir()) / (random_string(16) + suffix)
     if tmp_path.is_file():
@@ -275,42 +293,14 @@ def get_temp_file_path(suffix='.tmp'):
     return tmp_path
 
 
-def disable_multithreads():
-    """ Disable multi-processing in numpy and cv2
-    """
-    os.environ["OMP_NUM_THREADS"]      = "1" # export OMP_NUM_THREADS=4
-    os.environ["OPENBLAS_NUM_THREADS"] = "1" # export OPENBLAS_NUM_THREADS=4 
-    os.environ["MKL_NUM_THREADS"]      = "1" # export MKL_NUM_THREADS=6
-    os.environ["NUMEXPR_NUM_THREADS"]  = "1" # export NUMEXPR_NUM_THREADS=6
-    import cv2
-    cv2.setNumThreads(0)
-    cv2.ocl.setUseOpenCL(False)
-
-
-def warning(msg: str):
-    """ Strong warning message
-
-    Args:
-        msg (str): warning message
-    """
-    print('=======================================================================')
-    print('Warning:', msg)
-    print('=======================================================================')
-
-def warning2(msg: str):
-    """ Weak warning message
-
-    Args:
-        msg (str): warning message
-    """
-    msg = ANSI.warningstr(msg)
-    print(msg)
-
-
 def read_file(fpath):
     with open(fpath, mode='r') as f:
         s = f.read()
     return s
+
+def print_to_file(msg, fpath, mode='a'):
+    with open(fpath, mode=mode) as f:
+        print(msg, file=f)
 
 def json_load(fpath):
     with open(fpath, mode='r') as f:
@@ -321,74 +311,9 @@ def json_dump(obj, fpath, indent=2):
     with open(fpath, mode='w') as f:
         json.dump(obj, fp=f, indent=indent)
 
-def print_to_file(msg, fpath, mode='a'):
-    with open(fpath, mode=mode) as f:
-        print(msg, file=f)
-
-
-class FunctionRegistry(dict):
-    def register(self, func):
-        self[func.__name__] = func
-        return func
-
-
-class SimpleConfig(dict):
-    """ A simple config class
-    """
-    def __getattr__(self, attr):
-        return self[attr]
-
-    def __setattr__(self, attr, value):
-        self[attr] = value
-
-
-def parse_config_str(config_str: str):
-    """
-
-    Args:
-        config_str (str): [description]
-
-    ### Examples:
-        >>> input_1: 'rand-re0.25'
-        >>> output_1: {'rand': True, 're': 0.25}
-
-        >>> input_2: 'baseline'
-        >>> output_2: {'baseline': True}
-    """
-    configs = dict()
-    for kv_pair in config_str.split('-'):
-        result = re.split(r'(\d.*)', kv_pair)
-        if len(result) == 1:
-            k = result[0]
-            configs[k] = True
-        else:
-            assert len(result) == 3 and result[2] == ''
-            k, v, _ = re.split(r'(\d.*)', kv_pair)
-            configs[k] = float(v)
-    return configs
-
-
-def zigzag(n):
-    """ Return indices for zig-zag expanding a n x n matrix
-    """
-    indices = []
-    for i in range(2*n-1):
-        if i < n:
-            for j in range(0,i+1):
-                if i % 2 == 0: # i = 0, 2, 4, 6, ...
-                    indices.append((i-j,j))
-                else: # i = 1, 3, 5, ...
-                    indices.append((j,i-j))
-        else:
-            for j in range(i+1-n, n):
-                if i % 2 == 0: # i = 0, 2, 4, 6, ...
-                    indices.append((i-j,j))
-                else: # i = 1, 3, 5, ...
-                    indices.append((j,i-j))
-    return indices
-
 
 class SimpleTable(OrderedDict):
+    """ A simple class for creating a table with a header and a body."""
     def __init__(self, init_keys=[]):
         super().__init__()
         # initialization: assign None to initial keys
@@ -474,6 +399,11 @@ class SimpleTable(OrderedDict):
 
 
 def print_dict_as_table(dictionary: dict):
+    """ Print a dictionary as a table
+
+    Args:
+        dictionary (dict[str -> values]): a dictionary
+    """
     table = SimpleTable()
     keys = list(dictionary.keys())
     keys.sort()
@@ -511,25 +441,3 @@ class MaxLengthList():
 
     def max(self) -> float:
         return np.max(self._list)
-
-
-if __name__ == '__main__':
-    # s = 'rand-re0.25'
-    # s = 'baseline'
-    # cfg = parse_config_str(s)
-    # print(cfg)
-
-    # colorstr_example()
-    table = {
-        'general/step': 0, 'plain_loss': 4.487293014923732,
-        'plain_kl': 0.7481001019477844, 'plain_mse': 3.739192873239517,
-        'plain_bppix': 3.2378409215057915, 'plain_psnr': 12.756206328649393,
-        'plain_ms-ssim': 0.4347556612143914, 'ema_loss': 4.487293014923732,
-        'ema_kl': 0.7481001019477844, 'ema_mse': 3.739192873239517,
-        'ema_bppix': 3.2378409215057915, 'ema_psnr': 12.756206328649393,
-        'ema_ms-ssim': 0.4347556612143914
-    }
-    from tqdm import tqdm
-    for _ in tqdm(range(100)):
-        pass
-    print_dict_as_table(table)

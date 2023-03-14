@@ -8,11 +8,30 @@ import torchvision.transforms.functional as tvf
 
 
 def get_object_size(obj, unit='bits'):
-    assert unit == 'bits'
-    return sys.getsizeof(pickle.dumps(obj)) * 8
+    """ Get object size in bits
+
+    Args:
+        obj: Python object
+        unit (str): 'bits' or 'bytes'
+    """
+    num_bytes = sys.getsizeof(pickle.dumps(obj))
+    if unit == 'bits':
+        return num_bytes * 8
+    elif unit == 'bytes':
+        return num_bytes
+    else:
+        raise ValueError(f'Unknown unit {unit}')
 
 
 def pack_byte_strings(list_of_strings):
+    """ Pack a list of byte strings into a single byte string
+
+    Args:
+        list_of_strings (List[str]): a list of byte strings
+
+    Returns:
+        str: a single byte string
+    """
     # each string corresponds to a latent variable
     lengths = [len(s) for s in list_of_strings] # length of each string
     packed = b''.join(list_of_strings) # concatenate all strings
@@ -29,6 +48,15 @@ def pack_byte_strings(list_of_strings):
 
 
 def unpack_byte_string(string):
+    """ Unpack a byte string into a list of byte strings.
+    The input byte string should be packed by `pack_byte_strings()`.
+
+    Args:
+        string (str): a byte string packed by `pack_byte_strings()`
+
+    Returns:
+        List[str]: a list of byte strings
+    """
     # read the number of latent variables
     _len = 1
     num, string = struct.unpack('B', string[:_len])[0], string[_len:]
@@ -137,11 +165,19 @@ def bd_rate(r1, psnr1, r2, psnr2):
 
 
 class RDList():
+    """ A class to store/plot RD curves and compute BD-rates.
+    """
     def __init__(self) -> None:
         self.stats_all = []
         self.bdrate_anchor = None
 
     def add_json(self, fpath, label='no label', **kwargs):
+        """ Add a json file.
+
+        Args:
+            fpath (str or Path): path to the json file
+            label (str, optional): label for the curve. Defaults to 'no label'.
+        """
         with open(fpath, mode='r') as f:
             stat = json.load(f)
         if 'results' in stat:
@@ -150,25 +186,32 @@ class RDList():
         stat['kwargs'] = kwargs
         self.stats_all.append(stat)
 
-    def set_video_info(self, fps, height, width):
-        # self.video_info = (fps, height, width)
-        self.norm_factor = float(fps * height * width)
+    # def set_video_info(self, fps, height, width):
+    #     # self.video_info = (fps, height, width)
+    #     self.norm_factor = float(fps * height * width)
 
-    def add_json_bpms(self, fpath, label='no label', **kwargs):
-        with open(fpath, mode='r') as f:
-            stat = json.load(f)
-        if 'results' in stat:
-            stat = stat['results']
-        # convert bits per second (bps) to bits per pixel (bpp)
-        # fps, fh, fw = self.video_info
-        # stat['bpp'] = stat['bps'] / (fps * fh * fw)
-        stat['bpp'] = [r * 1000 / self.norm_factor for r in stat['bitrate']]
-        stat['psnr'] = stat['psnr-rgb']
-        stat['label'] = label
-        stat['kwargs'] = kwargs
-        self.stats_all.append(stat)
+    # def add_json_bpms(self, fpath, label='no label', **kwargs):
+    #     with open(fpath, mode='r') as f:
+    #         stat = json.load(f)
+    #     if 'results' in stat:
+    #         stat = stat['results']
+    #     # convert bits per second (bps) to bits per pixel (bpp)
+    #     # fps, fh, fw = self.video_info
+    #     # stat['bpp'] = stat['bps'] / (fps * fh * fw)
+    #     stat['bpp'] = [r * 1000 / self.norm_factor for r in stat['bitrate']]
+    #     stat['psnr'] = stat['psnr-rgb']
+    #     stat['label'] = label
+    #     stat['kwargs'] = kwargs
+    #     self.stats_all.append(stat)
 
     def add_data(self, bpp=[], psnr=[], label='no label', **kwargs):
+        """ Add a list of bpp and psnr.
+
+        Args:
+            bpp (list): a list of bpp
+            psnr (list): a list of psnr
+            label (str, optional): label for the curve. Defaults to 'no label'.
+        """
         stat = {
             'bpp': bpp,
             'psnr': psnr,
@@ -178,6 +221,12 @@ class RDList():
         self.stats_all.append(stat)
 
     def set_bdrate_anchor(self, label=None):
+        """ Set the last added curve as the anchor for BD-rate computation.
+        If label is not None, the curve with the provided `label` is used as the anchor.
+
+        Args:
+            label (optional): label of the anchor. If None, the last added curve is used as the anchor.
+        """
         if label is None:
             anchor = self.stats_all[-1]
         else:
@@ -187,6 +236,8 @@ class RDList():
         self.bdrate_anchor = anchor
 
     def compute_bdrate(self):
+        """ Compute and print BD-rate for all curves w.r.t. the anchor set by `set_bdrate_anchor()`.
+        """
         if self.bdrate_anchor is None:
             return
         bd_anchor = self.bdrate_anchor
@@ -200,6 +251,7 @@ class RDList():
         print()
 
     def plot_all_stats(self, ax):
+        """ Plot all curves."""
         for stat in self.stats_all:
             self._plot_stat(stat, ax=ax, **stat['kwargs'])
 
