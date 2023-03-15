@@ -2,7 +2,7 @@ import logging
 import argparse
 
 from lvae.trainer import BaseTrainingWrapper
-from lvae.datasets import get_image_dateset, make_trainloader
+from lvae.datasets.image import get_image_dateset
 from lvae.evaluation import image_self_evaluate
 
 
@@ -63,15 +63,11 @@ class TrainWrapper(BaseTrainingWrapper):
 
         logging.info('==== Datasets and Dataloaders ====')
         trainset = get_image_dateset(cfg.trainset, transform_cfg=cfg.transform)
-        trainloader, sampler = make_trainloader(trainset, batch_size=cfg.batch_size, workers=cfg.workers)
         logging.info(f'Training root: {trainset.root}')
         logging.info(f'Number of training images = {len(trainset)}')
         logging.info(f'Training transform: \n{str(trainset.transform)}')
 
-        self._epoch_len  = len(trainset) / cfg.bs_effective
-        self.trainloader = trainloader
-        self.trainsampler = sampler
-        self.cfg.epochs  = float(cfg.iterations / self._epoch_len)
+        self.make_training_loader(trainset)
 
     def eval_model(self, model) -> dict:
         results = image_self_evaluate(model, dataset=self.cfg.valset, progress=False)
