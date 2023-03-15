@@ -68,25 +68,19 @@ class TrainWrapper(BaseTrainingWrapper):
 
         logging.info('==== Datasets and Dataloaders ====')
         trainset = get_image_dateset(cfg.trainset, transform_cfg=cfg.transform)
-        trainloader, sampler = make_trainloader(trainset, batch_size=cfg.batch_size, workers=cfg.workers)
+        self.make_training_loader(trainset)
+
         logging.info(f'Training root: {trainset.root}')
         logging.info(f'Number of training images = {len(trainset)}')
         logging.info(f'Training transform: \n{str(trainset.transform)}')
-
-        # test set
-        val_img_dir = known_datasets[cfg.valset]
-        logging.info(f'Validation root: {val_img_dir} \n')
-
-        self._epoch_len  = len(trainset) / cfg.bs_effective
-        self.trainloader = trainloader
-        self.trainsampler = sampler
-        self.val_img_dir = val_img_dir
-        self.cfg.epochs  = float(cfg.iterations / self._epoch_len)
+        logging.info(f'Validation root: {known_datasets[cfg.valset]} \n')
 
     @torch.no_grad()
     def evaluate(self):
         assert self.is_main
         log_dir = self._log_dir
+        cfg = self.cfg
+        val_img_dir = known_datasets[cfg.valset]
 
         # Evaluation
         _log_dic = {
@@ -94,8 +88,8 @@ class TrainWrapper(BaseTrainingWrapper):
             'general/iter':  self._cur_iter
         }
         model_ = unwrap_model(self.model).eval()
-        results = model_.self_evaluate(self.val_img_dir, log_dir=log_dir, steps=self.cfg.val_steps)
-        results_to_log = self.process_log_results(results)
+        results = model_.self_evaluate(val_img_dir, log_dir=log_dir, steps=cfg.val_steps)
+        results_to_log = process_log_results(results, cfg.valset)
 
         _log_dic.update({'val-metrics/plain-'+k: v for k,v in results_to_log.items()})
         # save last checkpoint
@@ -111,9 +105,9 @@ class TrainWrapper(BaseTrainingWrapper):
         torch.save(checkpoint, log_dir / 'last.pt')
         self._save_if_best(checkpoint)
 
-        if self.cfg.ema:
-            results = self.ema.module.self_evaluate(self.val_img_dir, log_dir=log_dir, steps=self.cfg.val_steps)
-            results_to_log = self.process_log_results(results)
+        if cfg.ema:
+            results = self.ema.module.self_evaluate(val_img_dir, log_dir=log_dir, steps=cfg.val_steps)
+            results_to_log = process_log_results(results, cfg.valset)
             _log_dic.update({'val-metrics/ema-'+k: v for k,v in results_to_log.items()})
             # save last checkpoint of EMA
             checkpoint = {
@@ -135,21 +129,22 @@ class TrainWrapper(BaseTrainingWrapper):
         self._results = results
         print()
 
-    def process_log_results(self, results):
-        bdr = compute_bd_rate_over_anchor(results, self.cfg.valset)
-        lambdas = results['lambda']
-        results_to_log = {'bd-rate': bdr}
-        for idx in [0, len(lambdas)//2, -1]:
-            lmb = round(lambdas[idx])
-            results_to_log.update({
-                f'lmb{lmb}/loss': results['loss'][idx],
-                f'lmb{lmb}/bpp':  results['bpp'][idx],
-                f'lmb{lmb}/psnr': results['psnr'][idx],
-            })
-        results['loss'] = bdr
-        results['bd-rate'] = bdr
-        print_json_like(results)
-        return results_to_log
+
+def process_log_results(results, dataset_name='kodak'):
+    bdr = compute_bd_rate_over_anchor(results, dataset_name)
+    lambdas = results['lambda']
+    results_to_log = {'bd-rate': bdr}
+    for idx in [0, len(lambdas)//2, -1]:
+        lmb = round(lambdas[idx])
+        results_to_log.update({
+            f'lmb{lmb}/loss': results['loss'][idx],
+            f'lmb{lmb}/bpp':  results['bpp'][idx],
+            f'lmb{lmb}/psnr': results['psnr'][idx],
+        })
+    results['loss'] = bdr
+    results['bd-rate'] = bdr
+    print_json_like(results)
+    return results_to_log
 
 def read_rd_stats_from_json(json_path):
     with open(json_path, mode='r') as f:

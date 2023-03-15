@@ -14,6 +14,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from timm.utils import ModelEmaV2, unwrap_model, random_seed
 
 import lvae.utils as utils
+from lvae.datasets.loader import make_trainloader
 from lvae.models.registry import get_model
 
 
@@ -145,7 +146,16 @@ class BaseTrainingWrapper():
         logging.info(msg)
 
     def set_dataset(self):
-        self._epoch_len: int
+        raise NotImplementedError()
+
+    def make_training_loader(self, dataset):
+        cfg = self.cfg
+        trainloader, sampler = make_trainloader(dataset, batch_size=cfg.batch_size, workers=cfg.workers)
+
+        self._epoch_len: float  = len(dataset) / cfg.bs_effective
+        self.trainloader = trainloader
+        self.trainsampler = sampler
+        self.cfg.epochs  = float(cfg.iterations / self._epoch_len)
 
     def set_model(self):
         cfg = self.cfg

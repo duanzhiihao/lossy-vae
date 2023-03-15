@@ -18,7 +18,7 @@ def make_trainloader(dataset, batch_size: int, workers: int):
         batch_size (int): batch size on each GPU
         workers (int): number of CPU workers
     """
-    world_size  = int(os.environ.get('WORLD_SIZE', 1))
+    world_size = int(os.environ.get('WORLD_SIZE', 1))
     if world_size > 1: # PyTorch DDP training
         sampler = DistributedSampler(dataset)
     else: # Single GPU training
