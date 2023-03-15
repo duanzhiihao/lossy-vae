@@ -179,6 +179,36 @@ class VRLVBlockBase(nn.Module):
         self.discrete_gaussian.update()
 
 
+class VRLVBlockBaseMLPprior(VRLVBlockBase):
+    """ Vriable-Rate Latent Variable Block
+    """
+    default_embedding_dim = 256
+    def __init__(self, width, zdim, enc_key, enc_width, embed_dim=None, **kwargs):
+        super(VRLVBlockBase, self).__init__()
+        self.in_channels  = width
+        self.out_channels = width
+        self.enc_key = enc_key
+
+        block = common.ConvNeXtBlockAdaLN
+        embed_dim = embed_dim or self.default_embedding_dim
+        self.resnet_front = block(width,   embed_dim, **kwargs)
+        self.resnet_end   = block(width,   embed_dim, **kwargs)
+        self.posterior0 = block(enc_width, embed_dim, **kwargs)
+        self.posterior1 = block(width,     embed_dim, **kwargs)
+        self.posterior2 = block(width,     embed_dim, **kwargs)
+        self.post_merge = common.conv_k1s1(width + enc_width, width)
+        self.posterior  = common.conv_k3s1(width, zdim)
+        self.z_proj     = common.conv_k1s1(zdim, width)
+        self.prior = nn.Sequential(
+            common.conv_k1s1(width, zdim*2),
+            nn.GELU(),
+            common.conv_k3s1(zdim*2, zdim*2)
+        )
+
+        self.discrete_gaussian = entropy_coding.DiscretizedGaussian()
+        self.is_latent_block = True
+
+
 class VRLVBlockBaseSoftplus(VRLVBlockBase):
     """ Vriable-Rate Latent Variable Block
     """
