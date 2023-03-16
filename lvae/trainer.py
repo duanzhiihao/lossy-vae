@@ -358,16 +358,20 @@ class BaseTrainingWrapper():
             # training step
             assert model.training
             batch = next(self.trainloader)
-            stats = model(batch)
-            loss = stats['loss'] / float(cfg.accum_num)
-            loss.backward() # gradients are averaged over devices in DDP mode
-            # parameter update
+            with amp.autocast(enabled=cfg.amp):
+                stats = model(batch)
+                loss = stats['loss'] / float(cfg.accum_num)
+            self.scaler.scale(loss).backward() # gradients are averaged over devices in DDP mode
+            # parameter update (with Gradient Accumulation when cfg.accum_num > 1)
             if step % cfg.accum_num == 0:
-                grad_norm, bad = self.gradient_clip(model.parameters())
-                self.optimizer.step()
+                # https://pytorch.org/docs/stable/notes/amp_examples.html#gradient-clipping
+                self.scaler.unscale_(self.optimizer)
+                _, flag = self.gradient_clip(model.parameters())
+                self.scaler.step(self.optimizer)
+                self.scaler.update()
                 self.optimizer.zero_grad()
 
-                if (self.ema is not None) and not bad:
+                if (self.ema is not None) and flag:
                     _warmup = cfg.ema_warmup or (cfg.iterations // 20)
                     self.ema.decay = cfg.ema_decay * (1 - math.exp(-step / _warmup))
                     self.ema.update(model)
@@ -396,10 +400,10 @@ class BaseTrainingWrapper():
                 param_group['lr'] *= 0.1
             _lr = param_group['lr']
             logging.warning(f'Large gradient norm = {grad_norm:3f}. Set lr={_lr} .')
-            bad = True
+            good = False
         else:
-            bad = False
-        return grad_norm, bad
+            good = True
+        return grad_norm, good
 
     def init_progress_table(self):
         assert self.is_main
