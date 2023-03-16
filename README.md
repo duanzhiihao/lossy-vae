@@ -7,14 +7,14 @@ This project is under active development.
 - **Lossy Image Compression with Quantized Hierarchical VAEs** [[arXiv](https://arxiv.org/abs/2208.13056)]
     - Published at WACV 2023,[ ***Best Algorithms Paper Award***](https://wacv2023.thecvf.com/node/174)
     - Abstract: a 12-layer VAE model named QRes-VAE. Good compression performance.
-    - **[Code & pre-trained models]**: [lossy-vae/lvae/models/qres](lvae/models/qresvae)
+    - \[Code & pre-trained models\]: [lossy-vae/lvae/models/qres](lvae/models/qresvae)
 - **QARV: Quantization-Aware ResNet VAE for Lossy Image Compression** [[arXiv](https://arxiv.org/abs/2302.08899)]
     - Technical report
-    - Abstract: improved version of QRes-VAE. Variable-rate, faster decoding, better performance.
-    - **[Code & pre-trained models]**: [lossy-vae/lvae/models/qarv](lvae/models/qarv)
+    - Abstract: improved version of QRes-VAE. **Variable-rate, faster decoding, better performance.**
+    - \[Code & pre-trained models\]: [lossy-vae/lvae/models/qarv](lvae/models/qarv)
 - **An Improved Upper Bound on the Rate-Distortion Function of Images**
     - Abstract: a 15-layer VAE model used to estimate the information R(D) function. This model proves that -30% BD-rate w.r.t. VTM is theoretically achievable.
-    - **[Code & pre-trained models]**: [lossy-vae/lvae/models/rd](lvae/models/rd)
+    - \[Code & pre-trained models\]: [lossy-vae/lvae/models/rd](lvae/models/rd)
 
 ### Features
 **Progressive coding:** our models learn *a deep hierarchy of* latent variables and compress/decompress images in a *coarse-to-fine* fashion. This feature comes from the hierarchical nature of ResNet VAEs.
