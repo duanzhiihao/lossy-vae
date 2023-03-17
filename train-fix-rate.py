@@ -11,6 +11,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     # wandb setting
     parser.add_argument('--wbproject',  type=str,  default='default')
+    parser.add_argument('--wbentity',   type=str,  default=None)
     parser.add_argument('--wbgroup',    type=str,  default='fix-rate-exp')
     parser.add_argument('--wbtags',     type=str,  default=None, nargs='+')
     parser.add_argument('--wbnote',     type=str,  default=None)
