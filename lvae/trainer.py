@@ -292,7 +292,7 @@ class BaseTrainingWrapper():
         if cfg.wbnote is not None:
             run_name = f'{run_name}: {cfg.wbnote}'
         wbrun = wandb.init(
-            project=cfg.wbproject, group=cfg.wbgroup, name=run_name, tags=cfg.wbtags,
+            project=cfg.wbproject, entity=cfg.wbentity, group=cfg.wbgroup, name=run_name, tags=cfg.wbtags,
             config=cfg, dir='runs/', id=rid, resume='allow', save_code=True, mode=cfg.wbmode
         )
         cfg = wbrun.config
