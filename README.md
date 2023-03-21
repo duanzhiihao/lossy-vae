@@ -100,8 +100,8 @@ im = model.decompress_file('/path/to/compressed.bits')
 ```
 
 ### Training and evaluation
-Training and evaluation methods vary from model to model. \
-Detailed training/evaluation instructions are provided in each model's subfolder (see the section [Implemented Methods](#implemented-methods---pre-trained-models-available) above for the subfolders).
+Training and evaluation scripts vary from model to model. \
+Detailed training/evaluation instructions are provided in each model's subfolder (see the section [Models](#models)).
 
 
 ## Prepare Datasets for Training and Evaluation
