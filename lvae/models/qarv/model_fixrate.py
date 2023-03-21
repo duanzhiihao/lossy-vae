@@ -436,7 +436,7 @@ class VariableRateLossyVAE(nn.Module):
                 str_i += 1
             else:
                 feature = block(feature)
-        assert str_i == len(compressed_object) - 2, f'str_i={str_i}, len={len(compressed_object)}'
+        assert str_i == len(compressed_object) - 1, f'str_i={str_i}, len={len(compressed_object)}'
         im_hat = self.process_output(feature)
         return im_hat
 
@@ -590,9 +590,19 @@ def qarv_base_fr(lmb=2048, pretrained=False):
 
     model = VariableRateLossyVAE(cfg)
     if pretrained is True:
-        raise NotImplementedError()
+        if lmb == 2048:
+            wpath = 'runs/topic/qarv_base_fr_0_lmb2048/last_ema.pt'
+        elif lmb == 512:
+            wpath = 'runs/topic/qarv_base_fr_lmb512/last_ema.pt'
+        elif lmb == 128:
+            wpath = 'runs/topic/qarv_base_fr_lmb128/last_ema.pt'
+        elif lmb == 16:
+            wpath = 'runs/topic/qarv_base_fr_lmb16/last_ema.pt'
+        else:
+            raise NotImplementedError(f'{lmb=}')
+        msd = torch.load(wpath)['model']
+        model.load_state_dict(msd)
     elif isinstance(pretrained, str):
         msd = torch.load(pretrained)['model']
         model.load_state_dict(msd)
     return model
-
