@@ -3,7 +3,14 @@
 This repository contains the authors' implementation of several deep hierarchical VAE-based methods related to lossy image compression. \
 This project is under active development.
 
-## Implemented Methods (Pre-Trained Models Available)
+- [Models](#models)
+- [Results](#results)
+- [Install](#install)
+- [Usage (compress, decompress, train, evaluation)](#usage)
+- [Licenses](#license)
+
+## Models
+### Implemented Methods (Pre-Trained Models Available)
 - **Lossy Image Compression with Quantized Hierarchical VAEs** [[arXiv](https://arxiv.org/abs/2208.13056)]
     - Published at WACV 2023,[ ***Best Algorithms Paper Award***](https://wacv2023.thecvf.com/node/174)
     - Abstract: a 12-layer VAE model named QRes-VAE. Good compression performance.
@@ -22,8 +29,21 @@ This project is under active development.
   <img src="https://user-images.githubusercontent.com/24869582/187014268-405851e8-b8a5-47e3-b28d-7b5d4ac20316.png" width="756" height="300">
 </p>
 
-**Compression efficiency**: our models are powerful in terms of both rate-distortion (bpp-PSNR) and decoding speed.
+**Compression performance**: our models are powerful in terms of both rate-distortion and decoding speed. Please see the results section below.
 
+
+## Results
+### Bpp-PSNR results in JSON format
+- Kodak images: [lossy-vae/results/kodak](results/kodak)
+- Tecknick TESTIMAGES RGB 1200x1200: [lossy-vae/results/tecnick-rgb-1200](results/tecnick-rgb-1200)
+- CLIC 2022 test set: [lossy-vae/results/clic2022-test](results/clic2022-test)
+
+Notes on metric computation:
+- Bpp and PSNR are first compute for each image and then averaged over all images in a dataset.
+- Bpp is the saved file size (in bits) divided by # of image pixels.
+- PSNR is computed in RGB space (not YUV).
+
+### Encoding/decoding latency on CPU/GPU, and BD-rate
 <div align="center">
 
 | Model Name  | CPU* Enc. | CPU* Dec. | 3080 ti Enc. | 3080 ti Dec. | BD-rate* (lower is better) |
@@ -36,6 +56,7 @@ This project is under active development.
 *Time is the latency to encode/decode a 512x768 image, averaged over 24 Kodak images. Tested in plain PyTorch (v1.13 + CUDA 11.7) code, ie, no mixed-precision, torchscript, ONNX/TensorRT, etc. \
 *CPU is Intel 10700k. \
 *BD-rate is w.r.t. [VTM 18.0](https://vcgit.hhi.fraunhofer.de/jvet/VVCSoftware_VTM/-/tree/VTM-18.0), averaged on three common test sets (Kodak, Tecnick TESTIMAGES, and CLIC 2022 test set).
+
 
 
 ## Install
@@ -62,6 +83,9 @@ Load a pre-trained model:
 ```python
 from lvae import get_model
 model = get_model('qarv_base', pretrained=True)
+
+model.eval()
+model.compress_mode(True) # initialize entropy coding
 ```
 
 Encode an image:
@@ -76,8 +100,8 @@ im = model.decompress_file('/path/to/compressed.bits')
 ```
 
 ### Training and evaluation
-Training and evaluation methods vary from model to model. \
-Detailed training/evaluation instructions are provided in each model's subfolder (see the section [Implemented Methods](#implemented-methods---pre-trained-models-available) above for the subfolders).
+Training and evaluation scripts vary from model to model. \
+Detailed training/evaluation instructions are provided in each model's subfolder (see the section [Models](#models)).
 
 
 ## Prepare Datasets for Training and Evaluation
