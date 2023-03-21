@@ -10,7 +10,7 @@ This project is under active development.
     - \[Code & pre-trained models\]: [lossy-vae/lvae/models/qres](lvae/models/qresvae)
 - **QARV: Quantization-Aware ResNet VAE for Lossy Image Compression** [[arXiv](https://arxiv.org/abs/2302.08899)]
     - Technical report
-    - Abstract: improved version of QRes-VAE. **Variable-rate, faster decoding, better performance.**
+    - Abstract: improved version of the previous model. **Variable-rate, faster decoding, better performance.**
     - \[Code & pre-trained models\]: [lossy-vae/lvae/models/qarv](lvae/models/qarv)
 - **An Improved Upper Bound on the Rate-Distortion Function of Images**
     - Abstract: a 15-layer VAE model used to estimate the information R(D) function. This model proves that -30% BD-rate w.r.t. VTM is theoretically achievable.
