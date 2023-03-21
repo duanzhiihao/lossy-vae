@@ -83,6 +83,9 @@ Load a pre-trained model:
 ```python
 from lvae import get_model
 model = get_model('qarv_base', pretrained=True)
+
+model.eval()
+model.compress_mode(True) # initialize entropy coding
 ```
 
 Encode an image:
