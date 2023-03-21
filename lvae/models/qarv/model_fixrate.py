@@ -180,6 +180,125 @@ class VRLatentBlockBase(nn.Module):
         self.discrete_gaussian.update()
 
 
+class QScaler(nn.Module):
+    def __init__(self, channels):
+        super().__init__()
+        self.bias = nn.Parameter(torch.zeros([1,channels,1,1]))
+        self.factor = nn.Parameter(torch.ones([1,channels,1,1]))
+
+    def compress(self,x):
+        return self.factor * (x - self.bias)
+
+    def decompress(self,x):
+        return self.bias + x / self.factor
+
+
+class LatentBlockQSF(nn.Module):
+    def __init__(self, width, zdim, enc_width=None, kernel_size=7, mlp_ratio=2):
+        super().__init__()
+        self.in_channels  = width
+        self.out_channels = width
+
+        self.resnet_front = ConvNeXtBlockFixRate(width, kernel_size=kernel_size, mlp_ratio=mlp_ratio)
+        self.resnet_end   = ConvNeXtBlockFixRate(width, kernel_size=kernel_size, mlp_ratio=mlp_ratio)
+        self.posterior0 = ConvNeXtBlockFixRate(enc_width, kernel_size=kernel_size)
+        self.posterior1 = ConvNeXtBlockFixRate(width, kernel_size=kernel_size)
+        self.posterior2 = ConvNeXtBlockFixRate(width, kernel_size=kernel_size)
+        enc_width = enc_width or width
+        self.post_merge = common.conv_k1s1(width + enc_width, width)
+        self.posterior  = common.conv_k3s1(width, zdim)
+        self.z_proj     = common.conv_k1s1(zdim, width)
+        self.prior      = common.conv_k1s1(width, zdim*2)
+
+        self.qsf_scaler = QScaler(zdim)
+        self.discrete_gaussian = entropy_coding.DiscretizedGaussian()
+        self.is_latent_block = True
+
+    def transform_prior(self, feature):
+        """ prior p(z_i | z_<i)
+
+        Args:
+            feature (torch.Tensor): feature map
+        """
+        feature = self.resnet_front(feature)
+        pm, plogv = self.prior(feature).chunk(2, dim=1)
+        plogv = tnf.softplus(plogv + 2.3) - 2.3 # make logscale > -2.3
+        pv = torch.exp(plogv)
+        return feature, pm, pv
+
+    def transform_posterior(self, feature, enc_feature):
+        """ posterior q(z_i | z_<i, x)
+
+        Args:
+            feature     (torch.Tensor): feature map
+            enc_feature (torch.Tensor): feature map
+        """
+        assert feature.shape[2:4] == enc_feature.shape[2:4]
+        enc_feature = self.posterior0(enc_feature)
+        feature = self.posterior1(feature)
+        merged = torch.cat([feature, enc_feature], dim=1)
+        merged = self.post_merge(merged)
+        merged = self.posterior2(merged)
+        qm = self.posterior(merged)
+        qm = self.qsf_scaler.compress(qm)
+        return qm
+
+    def fuse_feature_and_z(self, feature, z):
+        # add the new information carried by z to the feature
+        feature = feature + self.z_proj(z)
+        return feature
+
+    def forward(self, feature, enc_feature=None, mode='trainval',
+                get_latent=False, latent=None, t=1.0, strings=None):
+        """ a complicated forward function
+
+        Args:
+            feature     (torch.Tensor): feature map
+            enc_feature (torch.Tensor): feature map
+        """
+        feature, pm, pv = self.transform_prior(feature)
+
+        additional = dict()
+        if mode == 'trainval': # training or validation
+            qm = self.transform_posterior(feature, enc_feature)
+            if self.training: # if training, use additive uniform noise
+                z = qm + torch.empty_like(qm).uniform_(-0.5, 0.5)
+                log_prob = entropy_coding.gaussian_log_prob_mass(pm, pv, x=z, bin_size=1.0, prob_clamp=1e-6)
+                kl = -1.0 * log_prob
+            else: # if evaluation, use residual quantization
+                z, probs = self.discrete_gaussian(qm, scales=pv, means=pm)
+                kl = -1.0 * torch.log(probs)
+            additional['kl'] = kl
+        elif mode == 'sampling':
+            if latent is None: # if z is not provided, sample it from the prior
+                z = pm + pv * torch.randn_like(pm) * t + torch.empty_like(pm).uniform_(-0.5, 0.5) * t
+            else: # if `z` is provided, directly use it.
+                assert pm.shape == latent.shape
+                z = latent
+        elif mode == 'compress': # encode z into bits
+            qm = self.transform_posterior(feature, enc_feature)
+            indexes = self.discrete_gaussian.build_indexes(pv)
+            strings = self.discrete_gaussian.compress(qm, indexes, means=pm)
+            z = self.discrete_gaussian.quantize(qm, mode='dequantize', means=pm)
+            additional['strings'] = strings
+        elif mode == 'decompress': # decode z from bits
+            assert strings is not None
+            indexes = self.discrete_gaussian.build_indexes(pv)
+            z = self.discrete_gaussian.decompress(strings, indexes, means=pm)
+        else:
+            raise ValueError(f'Unknown mode={mode}')
+
+        z = self.qsf_scaler.decompress(z)
+        feature = self.fuse_feature_and_z(feature, z)
+        feature = self.resnet_end(feature)
+        if get_latent:
+            additional['z'] = z.detach()
+        return feature, additional
+
+    def update(self):
+        self.discrete_gaussian.update()
+
+
 class FeatureExtractor(nn.Module):
     def __init__(self, blocks):
         super().__init__()
@@ -606,3 +725,101 @@ def qarv_base_fr(lmb=2048, pretrained=False):
         msd = torch.load(pretrained)['model']
         model.load_state_dict(msd)
     return model
+
+
+@register_model
+def qarvb_fr_qsf(lmb=2048, pretrained=False):
+    cfg = dict()
+
+    # variable rate
+    cfg['distortion_lmb'] = float(lmb)
+
+    ch = 128
+    enc_dims = [192, ch*3, ch*4, ch*4, ch*4]
+    dec_dims = [ch*4, ch*4, ch*3, ch*2, ch*1]
+    z_dims = [32, 32, 96, 8]
+
+    im_channels = 3
+    cfg['enc_blocks'] = [
+        # 64x64
+        common.patch_downsample(im_channels, enc_dims[0], rate=4),
+        # 16x16
+        *[ConvNeXtBlockFixRate(enc_dims[0], kernel_size=7) for _ in range(6)],
+        ConvNeXtAdaLNPatchDown(enc_dims[0], enc_dims[1]),
+        # 8x8
+        *[ConvNeXtBlockFixRate(enc_dims[1], kernel_size=7) for _ in range(6)],
+        ConvNeXtAdaLNPatchDown(enc_dims[1], enc_dims[2]),
+        # 4x4
+        *[ConvNeXtBlockFixRate(enc_dims[2], kernel_size=5) for _ in range(6)],
+        ConvNeXtAdaLNPatchDown(enc_dims[2], enc_dims[3]),
+        # 2x2
+        *[ConvNeXtBlockFixRate(enc_dims[3], kernel_size=3) for _ in range(4)],
+        ConvNeXtAdaLNPatchDown(enc_dims[3], enc_dims[3]),
+        # 1x1
+        *[ConvNeXtBlockFixRate(enc_dims[3], kernel_size=1) for _ in range(4)],
+    ]
+
+    cfg['dec_blocks'] = [
+        # 1x1
+        *[LatentBlockQSF(dec_dims[0], z_dims[0], enc_width=enc_dims[-1], kernel_size=1, mlp_ratio=4) for _ in range(1)],
+        ConvNeXtBlockFixRate(dec_dims[0], kernel_size=1, mlp_ratio=4),
+        common.patch_upsample(dec_dims[0], dec_dims[1], rate=2),
+        # 2x2
+        ConvNeXtBlockFixRate(dec_dims[1], kernel_size=3, mlp_ratio=3),
+        *[LatentBlockQSF(dec_dims[1], z_dims[1], enc_width=enc_dims[-2], kernel_size=3, mlp_ratio=3) for _ in range(2)],
+        ConvNeXtBlockFixRate(dec_dims[1], kernel_size=3, mlp_ratio=3),
+        common.patch_upsample(dec_dims[1], dec_dims[2], rate=2),
+        # 4x4
+        ConvNeXtBlockFixRate(dec_dims[2], kernel_size=5, mlp_ratio=2),
+        *[LatentBlockQSF(dec_dims[2], z_dims[2], enc_width=enc_dims[-3], kernel_size=5, mlp_ratio=2) for _ in range(3)],
+        ConvNeXtBlockFixRate(dec_dims[2], kernel_size=5, mlp_ratio=2),
+        common.patch_upsample(dec_dims[2], dec_dims[3], rate=2),
+        # 8x8
+        ConvNeXtBlockFixRate(dec_dims[3], kernel_size=7, mlp_ratio=1.75),
+        *[LatentBlockQSF(dec_dims[3], z_dims[3], enc_width=enc_dims[-4], kernel_size=7, mlp_ratio=1.75) for _ in range(3)],
+        ConvNeXtBlockFixRate(dec_dims[3], kernel_size=7, mlp_ratio=1.75),
+        common.patch_upsample(dec_dims[3], dec_dims[4], rate=2),
+        # 16x16
+        *[ConvNeXtBlockFixRate(dec_dims[4], kernel_size=7, mlp_ratio=1.5) for _ in range(8)],
+        common.patch_upsample(dec_dims[4], im_channels, rate=4)
+    ]
+
+    # mean and std computed on imagenet
+    cfg['im_shift'] = -0.4546259594901961
+    cfg['im_scale'] = 3.67572653978347
+    cfg['max_stride'] = 64
+
+    cfg['log_images'] = ['collie64.png', 'gun128.png', 'motor256.png']
+
+    model = VariableRateLossyVAE(cfg)
+
+    # load pre-trained weights
+    msd = torch.load('runs/topic/qarv_base_fr_0_lmb2048/last_ema.pt')['model']
+    missing, unexpected = model.load_state_dict(msd, strict=False)
+    assert len(unexpected) == 0
+
+    _count = 0
+    for n, p in model.named_parameters():
+        if 'qsf_scaler' in n:
+            _count += 1
+        else:
+            p.requires_grad_(False)
+    assert len(missing) == _count
+
+    if pretrained is True:
+        raise NotImplementedError()
+        msd = torch.load(wpath)['model']
+        model.load_state_dict(msd)
+    elif isinstance(pretrained, str):
+        msd = torch.load(pretrained)['model']
+        model.load_state_dict(msd)
+    return model
+
+
+def main():
+    model = qarvb_fr_qsf()
+    debug = 1
+
+
+if __name__ == '__main__':
+    main()
