@@ -54,7 +54,7 @@ def run_command(cmd):
 
 
 def encode_lowdelay(
-        input_path, output_path, input_hw, quality, nframes,
+        input_path, output_path, input_hw, qp, nframes,
         frame_rate=30, intra_period=-1,
         input_fmt='444'
     ):
@@ -76,14 +76,14 @@ def encode_lowdelay(
         f'--FramesToBeEncoded={nframes}',
         f'--IntraPeriod={intra_period}',
         f'--DecodingRefreshType=2',
-        f'--QP={quality}',
+        f'--QP={qp}',
         '--Level=6.2',
     ]
     msg, cmd = run_command(cmd)
     return msg, cmd
 
 
-def encode_folder(input_dir, output_path, quality, num_frames=None, **kwargs):
+def encode_folder(input_dir, output_path, qp, num_frames=None, **kwargs):
     frame_paths = list(Path(input_dir).glob('*.png'))
     frame_paths.sort()
     if num_frames is None:
@@ -102,14 +102,14 @@ def encode_folder(input_dir, output_path, quality, num_frames=None, **kwargs):
             im = np.transpose(im, axes=(2, 0, 1))
             f.write(im.tobytes())
     msg, cmd = encode_lowdelay(
-        tmp_yuv_path, output_path, input_hw=(fh, fw), quality=quality, nframes=num_frames,
+        tmp_yuv_path, output_path, input_hw=(fh, fw), qp=qp, nframes=num_frames,
         **kwargs
     )
     tmp_yuv_path.unlink()
     return msg, cmd
 
 
-def encode_intra(input_path, input_hw, output_path, quality, input_fmt=444):
+def encode_intra(input_path, input_hw, output_path, qp, input_fmt=444):
     cfg_path = _get_root() / 'encoder_intra_vtm.cfg'
     cmd = [
         get_enc_path(),
@@ -121,13 +121,13 @@ def encode_intra(input_path, input_hw, output_path, quality, input_fmt=444):
         f'--InputChromaFormat={input_fmt}',
         f'--FrameRate=1',
         f'--FramesToBeEncoded=1',
-        f'--QP={quality}',
+        f'--QP={qp}',
     ]
     msg, cmd = run_command(cmd)
     return msg, cmd
 
 
-def encode_numpy_rgb(im: np.ndarray, output_path, quality=30):
+def encode_numpy_rgb(im: np.ndarray, output_path, qp=30):
     assert (im.dtype == np.uint8) and (im.ndim == 3) and (im.shape[2] == 3)
     # save to yuv file
     imh, imw = im.shape[:2]
@@ -142,17 +142,17 @@ def encode_numpy_rgb(im: np.ndarray, output_path, quality=30):
         input_path=tmp_yuv_path,
         input_hw=(imh, imw),
         output_path=output_path,
-        quality=quality
+        qp=qp
     )
 
     tmp_yuv_path.unlink()
     return msg, cmd
 
 
-def encode_png_file(input_path, output_path=None, quality=30):
+def encode_png_file(input_path, output_path=None, qp=30):
     im = cv2.imread(str(input_path))
     im = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
-    encode_numpy_rgb(im, output_path=output_path, quality=quality)
+    encode_numpy_rgb(im, output_path=output_path, qp=qp)
 
 
 def decode_to_yuv_file(bits_path, output_path=None):
