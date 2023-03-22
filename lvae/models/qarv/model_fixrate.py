@@ -9,6 +9,7 @@ import torch.nn as nn
 import torch.nn.functional as tnf
 import torchvision as tv
 import torchvision.transforms.functional as tvf
+from torch.hub import load_state_dict_from_url
 from timm.utils import AverageMeter
 
 from lvae.utils.coding import crop_divisible_by, pad_divisible_by
@@ -794,7 +795,8 @@ def qarvb_fr_qsf(lmb=2048, pretrained=False):
     model = VariableRateLossyVAE(cfg)
 
     # load pre-trained weights
-    msd = torch.load('runs/topic/qarv_base_fr_0_lmb2048/last_ema.pt')['model']
+    url = 'https://huggingface.co/duanzh0/my-model-weights/resolve/main/qarv_base-fr-lmb2048-bs16-500k.pt'
+    msd = load_state_dict_from_url(url)['model']
     missing, unexpected = model.load_state_dict(msd, strict=False)
     assert len(unexpected) == 0
 
