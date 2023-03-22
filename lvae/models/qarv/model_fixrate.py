@@ -241,7 +241,6 @@ class LatentBlockQSF(nn.Module):
         merged = self.post_merge(merged)
         merged = self.posterior2(merged)
         qm = self.posterior(merged)
-        qm = self.qsf_scaler.compress(qm)
         return qm
 
     def fuse_feature_and_z(self, feature, z):
@@ -262,6 +261,7 @@ class LatentBlockQSF(nn.Module):
         additional = dict()
         if mode == 'trainval': # training or validation
             qm = self.transform_posterior(feature, enc_feature)
+            qm = self.qsf_scaler.compress(qm - pm) + pm
             if self.training: # if training, use additive uniform noise
                 z = qm + torch.empty_like(qm).uniform_(-0.5, 0.5)
                 log_prob = entropy_coding.gaussian_log_prob_mass(pm, pv, x=z, bin_size=1.0, prob_clamp=1e-6)
@@ -289,7 +289,7 @@ class LatentBlockQSF(nn.Module):
         else:
             raise ValueError(f'Unknown mode={mode}')
 
-        z = self.qsf_scaler.decompress(z)
+        z = self.qsf_scaler.decompress(z - pm) + pm
         feature = self.fuse_feature_and_z(feature, z)
         feature = self.resnet_end(feature)
         if get_latent:
