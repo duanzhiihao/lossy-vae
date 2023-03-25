@@ -28,10 +28,11 @@ def main():
     model.compress_mode()
 
     start, end = args.lmb_range
-    p = 3.0
-    lambdas = torch.linspace(
-        math.pow(start,1/p), math.pow(end,1/p), steps=args.steps
-    ).pow(p).tolist()
+    # p = 3.0
+    # lambdas = torch.linspace(
+    #     math.pow(start,1/p), math.pow(end,1/p), steps=args.steps
+    # ).pow(p).tolist()
+    lambdas = torch.linspace(math.log(start), math.log(end), steps=args.steps).exp().tolist()
 
     save_json_path = Path(f'runs/results/{args.dataset_name}-{args.model}.json')
     if not save_json_path.parent.is_dir():
@@ -40,11 +41,7 @@ def main():
 
     all_lmb_stats = defaultdict(list)
     for lmb in lambdas:
-        if hasattr(model, 'default_lmb'):
-            model.default_lmb = lmb
-        else:
-            print(f'==== model {args.model} is deprecated. Please use new ones instead ====')
-            model._default_log_lmb = math.log(lmb)
+        model.default_lmb = lmb
         results = imcoding_evaluate(model, args.dataset_name)
         print(results)
 
