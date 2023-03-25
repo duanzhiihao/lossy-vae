@@ -289,12 +289,12 @@ def qarv2_s6(lmb_range=(16,2048), pretrained=False):
     cfg = dict()
 
     # mean and std computed on imagenet
-    cfg['im_shift'] = -0.4546259594901961
-    cfg['im_scale'] = 3.67572653978347
+    # cfg['im_shift'] = -0.4546259594901961
+    # cfg['im_scale'] = 3.67572653978347
     # maximum downsampling factor
     cfg['max_stride'] = 64
     # images used during training
-    cfg['log_images'] = ['collie64.png', 'gun128.png', 'motor256.png']
+    cfg['log_images'] = []
 
     # variable-rate
     cfg['lmb_range'] = (float(lmb_range[0]), float(lmb_range[1]))
