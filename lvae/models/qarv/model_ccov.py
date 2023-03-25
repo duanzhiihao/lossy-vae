@@ -984,8 +984,7 @@ def qarvb_cconv(pretrained=False):
 
     model = VariableRateLossyVAE(cfg)
     if pretrained is True:
-        url = 'https://huggingface.co/duanzh0/my-model-weights/resolve/main/qarv_base-dec12-2022.pt'
-        msd = load_state_dict_from_url(url)['model']
+        msd = torch.load('d:/projects/_logs/qarv_vr_cconv.pt')['model']
         model.load_state_dict(msd)
     elif isinstance(pretrained, str):
         msd = torch.load(pretrained)['model']
