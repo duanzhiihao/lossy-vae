@@ -297,11 +297,9 @@ class VariableRateLossyVAE(nn.Module):
 
         self._setup_lmb_embedding(config)
 
-        from timm.data.constants import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
-        self.register_buffer('im_shift', torch.Tensor(IMAGENET_DEFAULT_MEAN).view(1,3,1,1))
-        self.register_buffer('im_scale', torch.Tensor(IMAGENET_DEFAULT_STD).view(1,3,1,1))
-        # self.im_shift = float(config['im_shift'])
-        # self.im_scale = float(config['im_scale'])
+        # default mean and std computed on imagenet
+        self.im_shift = float(config.get('im_shift', -0.4546259594901961))
+        self.im_scale = float(config.get('im_scale', 3.67572653978347))
         self.max_stride = config['max_stride']
 
         self.register_buffer('_dummy', torch.zeros(1), persistent=False)
@@ -332,8 +330,7 @@ class VariableRateLossyVAE(nn.Module):
         """
         assert (im.shape[2] % self.max_stride == 0) and (im.shape[3] % self.max_stride == 0)
         assert (im.dim() == 4) and (0 <= im.min() <= im.max() <= 1) and not im.requires_grad
-        # x = im.clone().add_(self.im_shift).mul_(self.im_scale)
-        x = im.clone().sub_(self.im_shift).div_(self.im_scale)
+        x = im.clone().add_(self.im_shift).mul_(self.im_scale)
         return x
 
     def process_output(self, x: torch.Tensor):
