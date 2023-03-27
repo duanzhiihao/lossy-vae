@@ -1,6 +1,6 @@
 # Lossy Image Compression using Hierarchical VAEs
 
-This repository contains the authors' implementation of several deep hierarchical VAE-based methods related to lossy image compression. \
+This repository contains authors' implementation of several deep learning-based methods related to lossy image compression. \
 This project is under active development.
 
 - [Models](#models)
@@ -99,12 +99,8 @@ im = model.decompress_file('/path/to/compressed.bits')
 # im is a torch.Tensor of shape (1, 3, H, W). RGB. pixel values in [0, 1].
 ```
 
-### Training and evaluation
-Training and evaluation scripts vary from model to model. \
-Detailed training/evaluation instructions are provided in each model's subfolder (see the section [Models](#models)).
 
-
-## Prepare Datasets for Training and Evaluation
+### Training and evaluation - datasets
 **COCO**
 1. Download the COCO dataset "2017 Train images [118K/18GB]" from https://cocodataset.org/#download
 2. Unzip the images anywhere, e.g., at `/path/to/datasets/coco/train2017`
@@ -123,6 +119,15 @@ python scripts/download-dataset.py --name kodak         --datasets_root /path/to
 ```
 Then, edit `lossy-vae/lvae/paths.py` such that `known_datasets['kodak'] = '/path/to/datasets/kodak'`, and similarly for other datasets.
 
+**Custom Dataset**
+1. Prepare a folder containing images. The folder should contain only images (may contain subfolders).
+2. Edit `lossy-vae/lvae/paths.py` such that `known_datasets['custom-name'] = '/path/to/my-dataset'`, where `custom-name` is the name of your dataset, and `/path/to/my-dataset` is the path to the folder containing images.
+3. Then, you can use `custom-name` as the dataset name in the training/evaluation scripts.
 
-## License (TBD)
+### Training and evaluation - scripts
+Training and evaluation scripts vary from model to model. For example, `qres34m` uses fixed-rate train/eval scheme, while `qarv_base` uses variable-rate train/eval scheme. \
+Detailed training/evaluation instructions are provided in each model's subfolder (see the section [Models](#models)).
+
+
+## License
 Code in this repository is freely available for non-commercial use.
