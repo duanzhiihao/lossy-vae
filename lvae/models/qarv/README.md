@@ -8,7 +8,7 @@ QARV (Quantization-Aware ResNet VAE) is an improved version of QRes-VAE.
 ## Features
 - ***Continuously* variable-rate:** QARV can compress images at any target bitrates, from around 0.2 bpp to 2.2 bpp, with a single model.
 - **Faster decoding:** QARV is faster than QRes-VAE in terms of decoding speed.
-- **Strong R-D performance:** QARV achieves -6.537 BD-rate w.r.t. VTM 18.0.
+- **Strong R-D performance:** QARV is more than 5% better than VTM 18.0 in terms of BD-rate.
 
 
 ## Pre-trained models
