@@ -124,5 +124,5 @@ python scripts/download-dataset.py --name kodak         --datasets_root /path/to
 Then, edit `lossy-vae/lvae/paths.py` such that `known_datasets['kodak'] = '/path/to/datasets/kodak'`, and similarly for other datasets.
 
 
-## License
-TBD
+## License (TBD)
+Code in this repository is freely available for non-commercial use.
