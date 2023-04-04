@@ -291,7 +291,7 @@ class VariableRateLossyVAE(nn.Module):
         feature = self.bias.expand(nB, -1, nH, nW)
         return feature
 
-    def forward_end2end(self, im: torch.Tensor, lmb: torch.Tensor, mode='trainval'):
+    def forward_end2end(self, im: torch.Tensor, lmb: torch.Tensor, mode='trainval', get_latent=False):
         x = self.preprocess_input(im)
         # ================ get lambda embedding ================
         emb = self._get_lmb_embedding(lmb, n=im.shape[0])
@@ -303,7 +303,7 @@ class VariableRateLossyVAE(nn.Module):
         for i, block in enumerate(self.dec_blocks):
             if getattr(block, 'is_latent_block', False):
                 f_enc = enc_features[block.enc_key]
-                feature, stats = block(feature, emb, enc_feature=f_enc, mode=mode)
+                feature, stats = block(feature, emb, enc_feature=f_enc, mode=mode, get_latent=get_latent)
                 lv_block_results.append(stats)
             elif getattr(block, 'requires_embedding', False):
                 feature = block(feature, emb)

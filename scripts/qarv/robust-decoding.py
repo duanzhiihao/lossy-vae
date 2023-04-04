@@ -1,8 +1,4 @@
-import json
-import pickle
-from tqdm import tqdm
 from pathlib import Path
-from collections import defaultdict
 from PIL import Image
 import math
 import torch
@@ -33,26 +29,26 @@ def main():
     model = model.to(device=device)
     model.eval()
 
-    # impath = Path('images/zebra256.png')
-    impath = Path('images/house256.png')
+    impath = Path('images/zebra256.png')
+    # impath = Path('images/house256.png')
     im = tvf.to_tensor(Image.open(impath)).unsqueeze_(0).to(device=device)
     nB, imC, imH, imW = im.shape
 
-    lmb = 2048
-    _, stats_all = model.forward_end2end(im, lmb=lmb, get_latents=True)
+    lmb = 16
+    _, stats_all = model.forward_end2end(im, lmb=lmb, get_latent=True)
 
     progressive_decodings = []
     bpps = []
     L = len(stats_all)
     for anchor in range(L):
-        # masked_stats = [stat if (i <= anchor) else None for (i,stat) in enumerate(stats_all)]
-        # name = 'progressive'
+        masked_stats = [stat if (i <= anchor) else None for (i,stat) in enumerate(stats_all)]
+        name = 'progressive'
         # masked_stats = [None if (i == anchor) else stat for (i,stat) in enumerate(stats_all)]
         # name = 'exclude'
         # masked_stats = [None if (i < anchor) else stat for (i,stat) in enumerate(stats_all)]
         # name = 'reverse'
-        masked_stats = [stat if (i == anchor) else None for (i,stat) in enumerate(stats_all)]
-        name = 'single'
+        # masked_stats = [stat if (i == anchor) else None for (i,stat) in enumerate(stats_all)]
+        # name = 'single'
         # conditional sampling
         latents = get_latents(masked_stats)
         _bhw = (nB, imH//64, imW//64)
