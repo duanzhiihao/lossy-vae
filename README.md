@@ -78,16 +78,15 @@ python -m pip install -e .
 
 
 ## Usage
-### Compress images using a pre-trained model
-Load a pre-trained model:
+### Get pre-trained weights
 ```python
 from lvae import get_model
-model = get_model('qarv_base', pretrained=True)
-
+model = get_model('qarv_base', pretrained=True) # weights are downloaded automatically
 model.eval()
 model.compress_mode(True) # initialize entropy coding
 ```
 
+### Compress images
 Encode an image:
 ```python
 model.compress_file('/path/to/image.png', '/path/to/compressed.bits')
