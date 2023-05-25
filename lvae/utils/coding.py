@@ -111,7 +111,7 @@ def crop_divisible_by(img, div=64):
 
 
 def bd_rate(r1, psnr1, r2, psnr2):
-    """ Compute average bit rate saving of RD-2 over RD-1.
+    """ Compute average bit rate difference between RD-2 and RD-1. (RD-1 is the baseline)
 
     Equivalent to the implementations in:
     https://github.com/Anserw/Bjontegaard_metric/blob/master/bjontegaard_metric.py
