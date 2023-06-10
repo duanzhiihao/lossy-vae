@@ -26,6 +26,8 @@ Note: images below are from the CelebA dataset and COCO dataset, respectively.
 model = lvae.get_model('qres34m', lmb=16, pretrained=True)
 # pre-trained models are provided for lmb in {16, 32, 64, 128, 256, 512, 1024, 2048}
 ```
+Note: `lmb` is the multiplier for MSE during training. I.e., `loss = rate + lmb * mse`.
+A larger `lmb` produces a higher bit rate and lower distortion (better reconsturction quality).
 
 **QRes-VAE (17M):** a smaller model trained on the CelebA dataset for ablation study.
 ```
@@ -37,9 +39,6 @@ model = lvae.get_model('qres17m', lmb=1, pretrained=True)
 ```
 model = lvae.get_model('qres34m_lossless', pretrained=True)
 ```
-
-Note: the `lmb` discussed above is the multiplier for MSE during training. I.e., `loss = rate + lmb * mse`.
-A larger `lmb` produces a higher bit rate and lower distortion (ie, better reconsturction quality).
 
 
 ## Usage
@@ -67,11 +66,16 @@ im = model.decompress_file('path/to/compressed.bin')
 - **Inpainting**: [scripts/qresvae/inpainting.ipynb](../../../scripts/qresvae/inpainting.ipynb)
 
 
-## Evaluate lossy compression efficiency
+## Evaluate lossy compression
 - Rate-distortion curve: `python eval-fix-rate.py --model qres34m --dataset kodak --device cuda:0`
     - Supported models: `qres34m`, `qres17m`
     - `kodak` can be replaced by any other dataset name in `lvae.paths.known_datasets`
-- Estimate end-to-end flops: [scripts\qresvae\estimate-flops.ipynb](../../../scripts/qresvae/estimate-flops.ipynb)
+- Estimate end-to-end flops: [scripts/qresvae/estimate-flops.ipynb](../../../scripts/qresvae/estimate-flops.ipynb)
+
+
+## Evaluate lossless compression
+- Demo: how to compress/decompress a single image: [scripts/qresvae/demo-lossless.ipynb](../../../scripts/qresvae/demo-lossless.ipynb)
+- Compute lossless compression bpp: `python scripts/qresvae/evaluate-lossless.py --root /path/to/dataset`. For Kodak images, the bpp is 10.369.
 
 
 ## Training

@@ -71,7 +71,7 @@ def qres34m_lossless(pretrained=False):
     im_channels = 3
     ch = 96 # 128
     cfg['enc_blocks'] = [
-        qres.get_conv(im_channels, ch*2, kernel_size=4, stride=4, padding=0),
+        common.patch_downsample(im_channels, ch*2, rate=4),
         *[qres.MyConvNeXtBlock(ch*2, kernel_size=7) for _ in range(enc_nums[0])], # 16x16
         qres.MyConvNeXtPatchDown(ch*2, ch*4),
         *[qres.MyConvNeXtBlock(ch*4, kernel_size=7) for _ in range(enc_nums[1])], # 8x8
