@@ -14,9 +14,9 @@ def parse_args():
     # ====== set the run settings ======
     parser = argparse.ArgumentParser()
     # wandb setting
-    parser.add_argument('--wbproject',  type=str,  default='default')
-    parser.add_argument('--wbentity',   type=str,  default=None)
-    parser.add_argument('--wbgroup',    type=str,  default='var-rate-exp')
+    parser.add_argument('--wbproject',  type=str,  default='qarv')
+    parser.add_argument('--wbentity',   type=str,  default='prof-zhu-compression')
+    parser.add_argument('--wbgroup',    type=str,  default='zd-ablation-study')
     parser.add_argument('--wbtags',     type=str,  default=None, nargs='+')
     parser.add_argument('--wbnote',     type=str,  default=None)
     parser.add_argument('--wbmode',     type=str,  default='disabled')
