@@ -252,7 +252,7 @@ def qarv_3z(lmb_range=(16,2048), pretrained=False):
     ]
 
     dec_dims = [ch*4, ch*4, ch*3, ch*2, ch*1]
-    z_dims = [32, 32, 96, 8]
+    z_dims = [32, None, 288, 24]
     cfg['dec_blocks'] = [
         # 1x1
         *[qarv.VRLVBlockBase(dec_dims[0], z_dims[0], enc_key='enc_s64', enc_width=enc_dims[-1], kernel_size=1, mlp_ratio=4) for _ in range(1)],
@@ -346,7 +346,7 @@ def qarv_5z(lmb_range=(16,2048), pretrained=False):
     ]
 
     dec_dims = [ch*4, ch*4, ch*3, ch*2, ch*1]
-    z_dims = [32, 32, 96, 8]
+    z_dims = [32, 64, 288, 12]
     cfg['dec_blocks'] = [
         # 1x1
         *[qarv.VRLVBlockBase(dec_dims[0], z_dims[0], enc_key='enc_s64', enc_width=enc_dims[-1], kernel_size=1, mlp_ratio=4) for _ in range(1)],
@@ -440,7 +440,7 @@ def qarv_7z(lmb_range=(16,2048), pretrained=False):
     ]
 
     dec_dims = [ch*4, ch*4, ch*3, ch*2, ch*1]
-    z_dims = [32, 32, 96, 8]
+    z_dims = [32, 32, 144, 12]
     cfg['dec_blocks'] = [
         # 1x1
         *[qarv.VRLVBlockBase(dec_dims[0], z_dims[0], enc_key='enc_s64', enc_width=enc_dims[-1], kernel_size=1, mlp_ratio=4) for _ in range(1)],
@@ -542,12 +542,12 @@ def qarv_11z(lmb_range=(16,2048), pretrained=False):
         common.patch_upsample(dec_dims[0], dec_dims[1], rate=2),
         # 2x2
         res_block(dec_dims[1], kernel_size=3, mlp_ratio=3),
-        *[qarv.VRLVBlockBase(dec_dims[1], z_dims[1], enc_key='enc_s32', enc_width=enc_dims[-2], kernel_size=3, mlp_ratio=3) for _ in range(2)],
+        *[qarv.VRLVBlockBase(dec_dims[1], z_dims[1], enc_key='enc_s32', enc_width=enc_dims[-2], kernel_size=3, mlp_ratio=3) for _ in range(3)],
         res_block(dec_dims[1], kernel_size=3, mlp_ratio=3),
         common.patch_upsample(dec_dims[1], dec_dims[2], rate=2),
         # 4x4
         res_block(dec_dims[2], kernel_size=5, mlp_ratio=2),
-        *[qarv.VRLVBlockBase(dec_dims[2], z_dims[2], enc_key='enc_s16', enc_width=enc_dims[-3], kernel_size=5, mlp_ratio=2) for _ in range(4)],
+        *[qarv.VRLVBlockBase(dec_dims[2], z_dims[2], enc_key='enc_s16', enc_width=enc_dims[-3], kernel_size=5, mlp_ratio=2) for _ in range(3)],
         res_block(dec_dims[2], kernel_size=5, mlp_ratio=2),
         common.patch_upsample(dec_dims[2], dec_dims[3], rate=2),
         # 8x8
