@@ -101,7 +101,9 @@ def qarv_base(lmb_range=(16,2048), pretrained=False):
 
 from pytorch_msssim import ms_ssim
 def msssim_loss(fake, real):
-    ms = ms_ssim(fake, real, data_range=1.0)
+    real = real * 0.5 + 0.5
+    assert 0.0 <= real.min() and real.max() <= 1.0
+    ms = ms_ssim(fake * 0.5 + 0.5, real, data_range=1.0)
     return 1 - ms
 
 @register_model
