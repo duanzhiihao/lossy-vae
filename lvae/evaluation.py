@@ -7,6 +7,7 @@ import math
 import torch
 import torchvision.transforms.functional as tvf
 from timm.utils import AverageMeter
+from pytorch_msssim import ms_ssim
 
 from lvae.paths import known_datasets
 from lvae.utils.coding import crop_divisible_by
@@ -47,12 +48,15 @@ def imcoding_evaluate(model: torch.nn.Module, dataset: str):
         real = tvf.to_tensor(Image.open(impath))
         mse = (real - fake).square().mean().item()
         psnr = -10 * math.log10(mse)
+        # compute ms-ssim
+        mssm = ms_ssim(real.unsqueeze(0), fake.unsqueeze(0), data_range=1.0)
         # compute bpp
         bpp = num_bits / float(real.shape[1] * real.shape[2])
         stats = {
             'bpp':  float(bpp),
             'mse':  float(mse),
-            'psnr': float(psnr)
+            'psnr': float(psnr),
+            'ms-ssim': float(mssm),
         }
 
         # accumulate stats

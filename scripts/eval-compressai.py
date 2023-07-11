@@ -2,6 +2,7 @@ from tqdm import tqdm
 from pathlib import Path
 from collections import defaultdict
 from PIL import Image
+from pytorch_msssim import ms_ssim
 import sys
 import json
 import pickle
@@ -67,11 +68,14 @@ def evaluate_model(model, dataset_root):
             plt.show()
         mse = tnf.mse_loss(fake, real, reduction='mean')
         psnr = float(-10 * math.log10(mse.item()))
+        # compute ms-ssim
+        mssm = ms_ssim(real.unsqueeze(0), fake.unsqueeze(0), data_range=1.0).item()
 
         # logging
         pbar.set_description(f'image {impath.stem}: bpp={bpp:.5f}, psnr={psnr:.3f}')
         all_image_stats['bpp'] += bpp
         all_image_stats['psnr'] += psnr
+        all_image_stats['ms-ssim'] += mssm
         all_image_stats['count'] += 1
 
     # average over all images
