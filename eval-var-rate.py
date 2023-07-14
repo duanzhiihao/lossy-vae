@@ -13,11 +13,14 @@ from lvae.evaluation import imcoding_evaluate
 @torch.no_grad()
 def main():
     parser = argparse.ArgumentParser()
+    # parser.add_argument('-m', '--model',        type=str,   default='qarv_base_ms')
+    # parser.add_argument('-a', '--model_args',   type=str,   default='pretrained="runs/qarv/qarv_base_ms_7/last_ema.pt"')
+    # parser.add_argument('-l', '--lmb_range',    type=float, default=[2, 128], nargs='+')
     parser.add_argument('-m', '--model',        type=str,   default='qarv_base')
     parser.add_argument('-a', '--model_args',   type=str,   default='pretrained=True')
     parser.add_argument('-l', '--lmb_range',    type=float, default=[16, 2048], nargs='+')
-    parser.add_argument('-s', '--steps',        type=int,   default=16)
-    parser.add_argument('-n', '--dataset_name', type=str,   default='tecnick-rgb-1200')
+    parser.add_argument('-s', '--steps',        type=int,   default=8)
+    parser.add_argument('-n', '--dataset_name', type=str,   default='kodak')
     parser.add_argument('-d', '--device',       type=str,   default='cuda:0')
     args = parser.parse_args()
 
