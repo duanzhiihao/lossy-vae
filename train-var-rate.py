@@ -14,8 +14,8 @@ def parse_args():
     # ====== set the run settings ======
     parser = argparse.ArgumentParser()
     # wandb setting
-    parser.add_argument('--wbproject',  type=str,  default='default')
-    parser.add_argument('--wbentity',   type=str,  default=None)
+    parser.add_argument('--wbproject',  type=str,  default='qarv')
+    parser.add_argument('--wbentity',   type=str,  default='prof-zhu-compression')
     parser.add_argument('--wbgroup',    type=str,  default='var-rate-exp')
     parser.add_argument('--wbtags',     type=str,  default=None, nargs='+')
     parser.add_argument('--wbnote',     type=str,  default=None)
@@ -34,7 +34,7 @@ def parse_args():
     parser.add_argument('--valset',     type=str,  default='kodak')
     parser.add_argument('--val_steps',  type=int,  default=8)
     # optimization setting
-    parser.add_argument('--batch_size', type=int,  default=16)
+    parser.add_argument('--batch_size', type=int,  default=32)
     parser.add_argument('--accum_num',  type=int,  default=1)
     parser.add_argument('--optimizer',  type=str,  default='adam')
     parser.add_argument('--lr',         type=float,default=2e-4)
@@ -51,7 +51,7 @@ def parse_args():
     parser.add_argument('--ema_warmup', type=int,  default=10_000)
     # device setting
     parser.add_argument('--fixseed',    action=argparse.BooleanOptionalAction, default=True)
-    parser.add_argument('--workers',    type=int,  default=6)
+    parser.add_argument('--workers',    type=int,  default=8)
     cfg = parser.parse_args()
 
     # default settings

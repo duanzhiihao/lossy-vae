@@ -809,6 +809,92 @@ def qarv2_t2(lmb_range=(16,2048), pretrained=False):
     return model
 
 
+@register_model
+def qarv2_z6sim(lmb_range=(16,2048), pretrained=False):
+    cfg = dict()
+
+    # maximum downsampling factor
+    cfg['max_stride'] = 64
+
+    # variable-rate
+    cfg['lmb_range'] = (float(lmb_range[0]), float(lmb_range[1]))
+    cfg['lmb_embed_dim'] = (256, 256)
+    cfg['sin_period'] = 64
+
+    # model configuration
+    res_block = common.ConvNeXtBlockAdaLN
+    res_block.default_embedding_dim = cfg['lmb_embed_dim'][1]
+    ch = 128
+    enc_dims = [ch, ch*2, ch*3, ch*3, ch*3]
+
+    im_channels = 3
+    cfg['enc_blocks'] = [
+        # 64x64
+        common.patch_downsample(im_channels, enc_dims[0], rate=4),
+        # 16x16
+        *[res_block(enc_dims[0]) for _ in range(4)],
+        common.patch_downsample(enc_dims[0], enc_dims[1]),
+        # 8x8
+        *[res_block(enc_dims[1]) for _ in range(4)],
+        common.SetKey('enc_s8'),
+        res_block(enc_dims[1]),
+        common.patch_downsample(enc_dims[1], enc_dims[2]),
+        # 4x4
+        *[res_block(enc_dims[2]) for _ in range(4)],
+        common.SetKey('enc_s16'),
+        res_block(enc_dims[2]),
+        common.patch_downsample(enc_dims[2], enc_dims[3]),
+        # 2x2
+        *[res_block(enc_dims[3]) for _ in range(4)],
+        common.SetKey('enc_s32'),
+        res_block(enc_dims[3]),
+        common.patch_downsample(enc_dims[3], enc_dims[4]),
+        # 1x1
+        *[res_block(enc_dims[4]) for _ in range(4)],
+        common.SetKey('enc_s64'),
+    ]
+
+    dec_dims = [ch*3, ch*3, ch*3, ch*2, ch*1]
+    z_dims = [32, 64, 128, 16]
+    cfg['dec_blocks'] = [
+        # 1x1
+        *[qarv.VRLVBlockBase(dec_dims[0], z_dims[0], enc_key='enc_s64', enc_width=enc_dims[-1]) for _ in range(1)],
+        res_block(dec_dims[0]),
+        common.patch_upsample(dec_dims[0], dec_dims[1]),
+        # 2x2
+        res_block(dec_dims[1]),
+        *[qarv.VRLVBlockBase(dec_dims[1], z_dims[1], enc_key='enc_s32', enc_width=enc_dims[-2]) for _ in range(1)],
+        res_block(dec_dims[1]),
+        common.patch_upsample(dec_dims[1], dec_dims[2]),
+        # 4x4
+        res_block(dec_dims[2]),
+        *[qarv.VRLVBlockBase(dec_dims[2], z_dims[2], enc_key='enc_s16', enc_width=enc_dims[-3]) for _ in range(2)],
+        res_block(dec_dims[2]),
+        common.patch_upsample(dec_dims[2], dec_dims[3]),
+        # 8x8
+        res_block(dec_dims[3]),
+        *[qarv.VRLVBlockBase(dec_dims[3], z_dims[3], enc_key='enc_s8', enc_width=enc_dims[-4]) for _ in range(2)],
+        common.CompresionStopFlag(), # no need to execute remaining blocks when compressing
+        res_block(dec_dims[3]),
+        common.patch_upsample(dec_dims[3], dec_dims[4]),
+        # 16x16
+        *[res_block(dec_dims[4]) for _ in range(4)],
+        common.patch_upsample(dec_dims[4], im_channels, rate=4)
+    ]
+
+    model = qarv.VariableRateLossyVAE(cfg)
+
+    if pretrained is True:
+        raise NotImplementedError()
+        url = 'https://huggingface.co/duanzh0/my-model-weights/resolve/main/qarv_base-2022-dec-12.pt'
+        msd = load_state_dict_from_url(url)['model']
+        model.load_state_dict(msd)
+    elif pretrained: # str or Path
+        msd = torch.load(pretrained)['model']
+        model.load_state_dict(msd)
+    return model
+
+
 def main():
     model = qarv2_b3()
     num_params = sum([p.numel() for p in model.parameters() if p.requires_grad])
