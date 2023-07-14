@@ -204,7 +204,7 @@ def log_msssim_loss(fake, real):
     real = real * 0.5 + 0.5
     assert 0.0 <= real.min() and real.max() <= 1.0
     ms = ms_ssim(fake * 0.5 + 0.5, real, data_range=1.0, size_average=False)
-    assert ms.min() > 0.0 and ms.max() <= 1.0
+    assert ms.min() > 0.0 and ms.max() <= 1.0, f'{ms.min()=}, {ms.max()=}'
     return -1.0 * torch.log(ms)
 
 @register_model
