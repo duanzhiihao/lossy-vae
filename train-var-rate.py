@@ -49,14 +49,15 @@ def parse_args():
     parser.add_argument('--ema',        action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument('--ema_decay',  type=float,default=0.9999)
     parser.add_argument('--ema_warmup', type=int,  default=10_000)
+    # automatic mixed precision (AMP)
+    parser.add_argument('--amp',        action=argparse.BooleanOptionalAction, default=False)
     # device setting
     parser.add_argument('--fixseed',    action=argparse.BooleanOptionalAction, default=True)
-    parser.add_argument('--workers',    type=int,  default=8)
+    parser.add_argument('--workers',    type=int,  default=6)
     cfg = parser.parse_args()
 
     # default settings
     cfg.wdecay = 0.0
-    cfg.amp = False
     cfg.wandb_log_interval = 100
     cfg.model_log_interval = 2000
     cfg.model_val_interval = 2000
