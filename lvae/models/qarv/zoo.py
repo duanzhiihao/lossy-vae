@@ -156,22 +156,22 @@ def qarv_b3321(lmb_range=(16,2048), pretrained=False):
     z_dims = [16, 32, 128, 32]
     cfg['dec_blocks'] = [
         # 1x1
-        *[qarv.VRLVBlockBase(dec_dims[0], z_dims[0], enc_key='enc_s64', enc_width=enc_dims[-1], kernel_size=1, mlp_ratio=4) for _ in range(1)],
+        *[qarv.VRLVBlockBase(dec_dims[0], z_dims[0], enc_key='enc_s64', enc_width=enc_dims[-1], kernel_size=1, mlp_ratio=4) for _ in range(3)],
         res_block(dec_dims[0], kernel_size=1, mlp_ratio=4),
         common.patch_upsample(dec_dims[0], dec_dims[1], rate=2),
         # 2x2
         res_block(dec_dims[1], kernel_size=3, mlp_ratio=3),
-        *[qarv.VRLVBlockBase(dec_dims[1], z_dims[1], enc_key='enc_s32', enc_width=enc_dims[-2], kernel_size=3, mlp_ratio=3) for _ in range(2)],
+        *[qarv.VRLVBlockBase(dec_dims[1], z_dims[1], enc_key='enc_s32', enc_width=enc_dims[-2], kernel_size=3, mlp_ratio=3) for _ in range(3)],
         res_block(dec_dims[1], kernel_size=3, mlp_ratio=3),
         common.patch_upsample(dec_dims[1], dec_dims[2], rate=2),
         # 4x4
         res_block(dec_dims[2], kernel_size=5, mlp_ratio=2),
-        *[qarv.VRLVBlockBase(dec_dims[2], z_dims[2], enc_key='enc_s16', enc_width=enc_dims[-3], kernel_size=5, mlp_ratio=2) for _ in range(3)],
+        *[qarv.VRLVBlockBase(dec_dims[2], z_dims[2], enc_key='enc_s16', enc_width=enc_dims[-3], kernel_size=5, mlp_ratio=2) for _ in range(2)],
         res_block(dec_dims[2], kernel_size=5, mlp_ratio=2),
         common.patch_upsample(dec_dims[2], dec_dims[3], rate=2),
         # 8x8
         res_block(dec_dims[3], kernel_size=7, mlp_ratio=1.75),
-        *[qarv.VRLVBlockBase(dec_dims[3], z_dims[3], enc_key='enc_s8', enc_width=enc_dims[-4], kernel_size=7, mlp_ratio=1.75) for _ in range(3)],
+        *[qarv.VRLVBlockBase(dec_dims[3], z_dims[3], enc_key='enc_s8', enc_width=enc_dims[-4], kernel_size=7, mlp_ratio=1.75) for _ in range(1)],
         common.CompresionStopFlag(), # no need to execute remaining blocks when compressing
         res_block(dec_dims[3], kernel_size=7, mlp_ratio=1.75),
         common.patch_upsample(dec_dims[3], dec_dims[4], rate=2),
@@ -964,7 +964,7 @@ def qarv_11z(lmb_range=(16,2048), pretrained=False):
 
 @torch.inference_mode()
 def main():
-    model = qarv_3z()
+    model = qarv_b3321()
 
     num_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f'Number of parameters: {num_params/1e6:.2f} M')
