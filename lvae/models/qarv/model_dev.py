@@ -272,6 +272,45 @@ class VRLVBlockSmall(VRLVBlockBase):
         return qm
 
 
+class VRLVBlockSmallSub(VRLVBlockBase):
+    default_embedding_dim = 256
+    def __init__(self, width, zdim, enc_key, enc_width, embed_dim=None, **kwargs):
+        super(VRLVBlockBase, self).__init__()
+        self.in_channels  = width
+        self.out_channels = width
+        self.enc_key = enc_key
+
+        block = common.ConvNeXtBlockAdaLN
+        enc_width = enc_width or width
+        self.resnet_front = block(width, embed_dim, **kwargs)
+        self.resnet_end   = block(width, embed_dim, **kwargs)
+        self.posterior2   = block(width, embed_dim, **kwargs)
+
+        enc_width = enc_width or width
+        self.post_enc   = common.conv_k1s1(enc_width, width)
+        self.post_merge = common.conv_k1s1(width, width)
+        self.posterior  = common.conv_k3s1(width, zdim)
+        self.z_proj     = common.conv_k1s1(zdim, width)
+        self.prior      = common.conv_k1s1(width, zdim*2)
+
+        self.discrete_gaussian = entropy_coding.DiscretizedGaussian()
+        self.is_latent_block = True
+
+    def transform_posterior(self, feature, enc_feature, lmb_embedding):
+        """ posterior q(z_i | z_<i, x)
+
+        Args:
+            feature     (torch.Tensor): feature map
+            enc_feature (torch.Tensor): feature map
+        """
+        assert feature.shape[2:4] == enc_feature.shape[2:4]
+        enc_feature = self.post_enc(enc_feature)
+        merged = self.post_merge(enc_feature - feature)
+        merged = self.posterior2(merged, lmb_embedding)
+        qm = self.posterior(merged)
+        return qm
+
+
 def mse_loss(fake, real):
     assert fake.shape == real.shape
     return tnf.mse_loss(fake, real, reduction='none').mean(dim=(1,2,3))
