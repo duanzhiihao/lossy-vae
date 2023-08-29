@@ -124,43 +124,6 @@ class VRLVBlockBase(nn.Module):
         self.discrete_gaussian.update()
 
 
-class VRLVBlockSmall(VRLVBlockBase):
-    default_embedding_dim = 256
-    def __init__(self, width, zdim, enc_key, enc_width, embed_dim=None, **kwargs):
-        super(VRLVBlockBase, self).__init__()
-        self.in_channels  = width
-        self.out_channels = width
-        self.enc_key = enc_key
-
-        block = common.ConvNeXtBlockAdaLN
-        enc_width = enc_width or width
-        concat_ch = (width * 2) if (enc_width is None) else (width + enc_width)
-        self.resnet_front = block(width, embed_dim, **kwargs)
-        self.resnet_end   = block(width, embed_dim, **kwargs)
-        self.posterior2   = block(width, embed_dim, **kwargs)
-        self.post_merge = common.conv_k1s1(concat_ch, width)
-        self.posterior  = common.conv_k3s1(width, zdim)
-        self.z_proj     = common.conv_k1s1(zdim, width)
-        self.prior      = common.conv_k1s1(width, zdim*2)
-
-        self.discrete_gaussian = entropy_coding.DiscretizedGaussian()
-        self.is_latent_block = True
-
-    def transform_posterior(self, feature, enc_feature, lmb_embedding):
-        """ posterior q(z_i | z_<i, x)
-
-        Args:
-            feature     (torch.Tensor): feature map
-            enc_feature (torch.Tensor): feature map
-        """
-        assert feature.shape[2:4] == enc_feature.shape[2:4]
-        merged = torch.cat([feature, enc_feature], dim=1)
-        merged = self.post_merge(merged)
-        merged = self.posterior2(merged, lmb_embedding)
-        qm = self.posterior(merged)
-        return qm
-
-
 def mse_loss(fake, real):
     assert fake.shape == real.shape
     return tnf.mse_loss(fake, real, reduction='none').mean(dim=(1,2,3))
@@ -194,7 +157,6 @@ class VariableRateLossyVAE(nn.Module):
         self._dummy: torch.Tensor
 
         self.compressing = False
-        # self._stats_log = dict()
         self._logging_images = config.get('log_images', [])
         self._flops_mode = False
 
@@ -345,22 +307,22 @@ class VariableRateLossyVAE(nn.Module):
         loss = kl + lmb * distortion
         loss = loss.mean(0)
 
-        stats = OrderedDict()
-        stats['loss'] = loss
+        metrics = OrderedDict()
+        metrics['loss'] = loss
 
         # ================ Logging ================
         with torch.no_grad():
             # for training print
-            stats['bppix'] = kl.mean(0).item() * self.log2_e * imC
-            stats[self.distortion_name] = distortion.mean(0).item()
+            metrics['bppix'] = kl.mean(0).item() * self.log2_e * imC
+            metrics[self.distortion_name] = distortion.mean(0).item()
             im_hat = self.process_output(x_hat.detach())
             im_mse = tnf.mse_loss(im_hat, im, reduction='mean')
             psnr = -10 * math.log10(im_mse.item())
-            stats['psnr'] = psnr
+            metrics['psnr'] = psnr
 
         if return_rec:
-            stats['im_hat'] = im_hat
-        return stats
+            metrics['im_hat'] = im_hat
+        return metrics
 
     def conditional_sample(self, lmb, latents, emb=None, bhw_repeat=None, t=1.0):
         """ sampling, conditioned on a list of latents variables
