@@ -95,7 +95,7 @@ class FeatureExtractorWithEmbedding(nn.Module):
                 x = block(x, emb)
             else:
                 x = block(x)
-        return x, features
+        return features
 
 
 def sinusoidal_embedding(values: torch.Tensor, dim=256, max_period=64):

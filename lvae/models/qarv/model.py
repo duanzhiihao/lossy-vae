@@ -74,19 +74,15 @@ class VRLVBlockBase(nn.Module):
         feature = feature + self.z_proj(z)
         return feature
 
-    def forward(self, feature, lmb_embedding, enc_feature=None, mode='trainval',
-                get_latent=False, latent=None, t=1.0, strings=None):
-        """ a complicated forward function
+    def forward(self, fdict, mode='trainval', latent=None, t=1.0, strings=None):
+        feature = fdict['feature']
+        emb = fdict['lmb_emb']
 
-        Args:
-            feature     (torch.Tensor): feature map
-            enc_feature (torch.Tensor): feature map
-        """
-        feature, pm, pv = self.transform_prior(feature, lmb_embedding)
+        feature, pm, pv = self.transform_prior(feature, emb)
 
-        additional = dict() # used to pack all returned values
         if mode == 'trainval': # training or validation
-            qm = self.transform_posterior(feature, enc_feature, lmb_embedding)
+            enc_feature = fdict['enc_features'][self.enc_key]
+            qm = self.transform_posterior(feature, enc_feature, emb)
             if self.training: # if training, use additive uniform noise
                 z = qm + torch.empty_like(qm).uniform_(-0.5, 0.5)
                 log_prob = entropy_coding.gaussian_log_prob_mass(pm, pv, x=z, bin_size=1.0, prob_clamp=1e-6)
@@ -94,7 +90,7 @@ class VRLVBlockBase(nn.Module):
             else: # if evaluation, use residual quantization
                 z, probs = self.discrete_gaussian(qm, scales=pv, means=pm)
                 kl = -1.0 * torch.log(probs)
-            additional['kl'] = kl
+            fdict['kl_divs'].append(kl)
         elif mode == 'sampling':
             if latent is None: # if z is not provided, sample it from the prior
                 z = pm + pv * torch.randn_like(pm) * t + torch.empty_like(pm).uniform_(-0.5, 0.5) * t
@@ -102,11 +98,12 @@ class VRLVBlockBase(nn.Module):
                 assert pm.shape == latent.shape
                 z = latent
         elif mode == 'compress': # encode z into bits
-            qm = self.transform_posterior(feature, enc_feature, lmb_embedding)
+            enc_feature = fdict['enc_features'][self.enc_key]
+            qm = self.transform_posterior(feature, enc_feature, emb)
             indexes = self.discrete_gaussian.build_indexes(pv)
             strings = self.discrete_gaussian.compress(qm, indexes, means=pm)
             z = self.discrete_gaussian.quantize(qm, mode='dequantize', means=pm)
-            additional['strings'] = strings
+            fdict['bit_strings'].append(strings)
         elif mode == 'decompress': # decode z from bits
             assert strings is not None
             indexes = self.discrete_gaussian.build_indexes(pv)
@@ -115,10 +112,10 @@ class VRLVBlockBase(nn.Module):
             raise ValueError(f'Unknown mode={mode}')
 
         feature = self.fuse_feature_and_z(feature, z)
-        feature = self.resnet_end(feature, lmb_embedding)
-        if get_latent:
-            additional['z'] = z.detach()
-        return feature, additional
+        feature = self.resnet_end(feature, emb)
+        fdict['feature'] = feature
+        fdict['zs'].append(z)
+        return fdict
 
     def update(self):
         self.discrete_gaussian.update()
@@ -253,34 +250,32 @@ class VariableRateLossyVAE(nn.Module):
         feature = self.bias.expand(nB, -1, nH, nW)
         return feature
 
-    def forward_end2end(self, im: torch.Tensor, lmb: torch.Tensor, mode='trainval', get_latent=False):
+    def forward_end2end(self, im: torch.Tensor, lmb: torch.Tensor, mode='trainval'):
         x = self.preprocess_input(im)
-        # ================ get lambda embedding ================
-        emb = self._get_lmb_embedding(lmb, n=im.shape[0])
-        # ================ Forward pass ================
-        _, enc_features = self.encoder(x, emb)
+
+        fdict = dict() # a feature dictionary containing all features
+        fdict['lmb_emb'] = self._get_lmb_embedding(lmb, n=im.shape[0])
+        fdict['enc_features'] = self.encoder(x, fdict['lmb_emb']) # bottom-up encoder features
+        fdict['dec_features'] = [] # top-down decoder features
+        fdict['zs'] = [] # latent variables
+        fdict['kl_divs'] = [] # kl (i.e., rate) for each latent variable
+        fdict['bit_strings'] = [] # compressed bit strings; only used in 'compress' mode
         nB, _, xH, xW = x.shape
         feature = self.get_bias(bhw_repeat=(nB, xH//self.max_stride, xW//self.max_stride))
-        lv_block_results = [] # all latent variable block results
+        fdict['feature'] = feature # main feature; will be updated in the following loop
         for i, block in enumerate(self.dec_blocks):
             if getattr(block, 'is_latent_block', False):
-                f_enc = enc_features[block.enc_key]
-                feature, stats = block(feature, emb, enc_feature=f_enc, mode=mode, get_latent=get_latent)
-                lv_block_results.append(stats)
+                fdict = block(fdict, mode=mode)
             elif getattr(block, 'requires_embedding', False):
-                feature = block(feature, emb)
+                fdict['feature'] = block(fdict['feature'], fdict['lmb_emb'])
             elif isinstance(block, common.CompresionStopFlag) and (mode == 'compress'):
                 # no need to execute remaining blocks when compressing
-                return lv_block_results
+                return fdict
             else:
-                feature = block(feature)
-        return feature, lv_block_results
+                fdict['feature'] = block(fdict['feature'])
+        return fdict
 
-    def forward(self, batch, lmb=None, return_rec=False):
-        if isinstance(batch, (tuple, list)):
-            im, label = batch
-        else:
-            im = batch
+    def forward(self, im, lmb=None, return_rec=False):
         im = im.to(self._dummy.device)
         nB, imC, imH, imW = im.shape # batch, channel, height, width
 
@@ -293,6 +288,7 @@ class VariableRateLossyVAE(nn.Module):
         if (lmb is None): # training
             lmb = self.sample_lmb(n=im.shape[0])
         assert isinstance(lmb, torch.Tensor) and lmb.shape == (nB,)
+        raise NotImplementedError()
         x_hat, stats_all = self.forward_end2end(im, lmb)
 
         # ================ Compute Loss ================
@@ -346,6 +342,7 @@ class VariableRateLossyVAE(nn.Module):
         idx = 0
         for i, block in enumerate(self.dec_blocks):
             if getattr(block, 'is_latent_block', False):
+                raise NotImplementedError()
                 feature, _ = block(feature, emb, mode='sampling', latent=latents[idx], t=t)
                 idx += 1
             elif getattr(block, 'requires_embedding', False):
@@ -382,6 +379,7 @@ class VariableRateLossyVAE(nn.Module):
         for imname in self._logging_images:
             impath = f'images/{imname}'
             im = tvf.to_tensor(Image.open(impath)).unsqueeze_(0).to(device=self._dummy.device)
+            raise NotImplementedError()
             x_hat, _ = self.forward_end2end(im, lmb=lmb)
             im_hat = self.process_output(x_hat)
             tv.utils.save_image(torch.cat([im, im_hat], dim=0), fp=save_dir / imname)
@@ -400,6 +398,7 @@ class VariableRateLossyVAE(nn.Module):
             # img = coding.crop_divisible_by(img, div=self.max_stride)
             img_padded = coding.pad_divisible_by(img, div=self.max_stride)
             im = tvf.to_tensor(img_padded).unsqueeze_(0).to(device=self._dummy.device)
+            raise NotImplementedError()
             x_hat, stats_all = self.forward_end2end(im, lmb=self.expand_to_tensor(lmb,n=1))
             x_hat = x_hat[:, :, :imgh, :imgw]
             # compute bpp
@@ -478,6 +477,7 @@ class VariableRateLossyVAE(nn.Module):
     @torch.no_grad()
     def compress(self, im, lmb=None):
         lmb = lmb or self.default_lmb # if no lmb is provided, use the default one
+        raise NotImplementedError()
         lv_block_results = self.forward_end2end(im, lmb=lmb, mode='compress')
         assert len(lv_block_results) == self.num_latents
         assert im.shape[0] == 1, f'Right now only support a single image, got {im.shape=}'
@@ -508,6 +508,7 @@ class VariableRateLossyVAE(nn.Module):
         for bi, block in enumerate(self.dec_blocks):
             if getattr(block, 'is_latent_block', False):
                 strs_batch = [all_lv_strings[str_i],]
+                raise NotImplementedError()
                 feature, _ = block(feature, lmb_embedding, mode='decompress', strings=strs_batch)
                 str_i += 1
             elif getattr(block, 'requires_embedding', False):
