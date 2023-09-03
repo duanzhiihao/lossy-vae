@@ -7,7 +7,7 @@ import lvae.models.qarv.model_v2 as qarv
 
 
 @register_model
-def qv2_3z(lmb_range=(64,2048), pretrained=False):
+def qv2_3z(lmb_range=(64,8192), pretrained=False):
     cfg = dict()
 
     # maximum downsampling factor

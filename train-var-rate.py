@@ -42,9 +42,11 @@ def parse_args():
     parser.add_argument('--lrf_min',    type=float,default=0.01)
     parser.add_argument('--lr_warmup',  type=int,  default=0)
     parser.add_argument('--grad_clip',  type=float,default=2.0)
-    # training iterations setting
+    # training setting
     parser.add_argument('--iterations', type=int,  default=1_000_000)
     parser.add_argument('--eval_first', action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument('--amp',        action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument('--compile',    action=argparse.BooleanOptionalAction, default=False)
     # exponential moving averaging (EMA)
     parser.add_argument('--ema',        action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument('--ema_decay',  type=float,default=0.9999)
@@ -56,7 +58,6 @@ def parse_args():
 
     # default settings
     cfg.wdecay = 0.0
-    cfg.amp = False
     cfg.wandb_log_interval = 100
     cfg.model_log_interval = 2000
     cfg.model_val_interval = 2000

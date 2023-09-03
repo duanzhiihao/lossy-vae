@@ -128,6 +128,7 @@ class BaseTrainingWrapper():
         if cfg.fixseed: # fix random seeds for reproducibility
             random_seed(2 + self.local_rank)
         torch.backends.cudnn.benchmark = True
+        torch.set_float32_matmul_precision('high')
 
         logging.info(f'Batch size on each GPU = {cfg.batch_size}')
         logging.info(f'Gradient accmulation: {cfg.accum_num} backwards() -> one optimizer.step()')
@@ -325,6 +326,12 @@ class BaseTrainingWrapper():
     def training_loops(self):
         cfg = self.cfg
         model = self.model
+
+        if getattr(cfg, 'compile', False):
+            logging.info(f'Using torch.compile...\n')
+            model = torch.compile(model)
+            from torch._dynamo.logging import set_loggers_level
+            set_loggers_level(logging.WARNING)
 
         # ======================== initialize logging ========================
         pbar = range(self._cur_iter, cfg.iterations)
