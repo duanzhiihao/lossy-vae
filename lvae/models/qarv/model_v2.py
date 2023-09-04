@@ -121,7 +121,7 @@ class VRLVBlockV2(nn.Module):
 
 class VariableRateLossyVAE(nn.Module):
     log2_e = math.log2(math.e)
-    MAX_LMB = 8192
+    MAX_LOG_LMB = math.log(8192)
 
     def __init__(self, config: dict):
         super().__init__()
@@ -178,7 +178,7 @@ class VariableRateLossyVAE(nn.Module):
 
     def get_lmb_embedding(self, lmb: torch.Tensor):
         assert isinstance(lmb, torch.Tensor) and lmb.dim() == 1
-        scaled = torch.log(lmb) * self._sin_period / math.log(self.MAX_LMB)
+        scaled = torch.log(lmb) * self._sin_period / self.MAX_LOG_LMB
         embedding = common.sinusoidal_embedding(scaled, dim=self.lmb_embed_dim[0],
                                                 max_period=self._sin_period)
         embedding = self.lmb_embedding(embedding)
