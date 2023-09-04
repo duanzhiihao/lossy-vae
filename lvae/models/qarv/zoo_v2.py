@@ -232,7 +232,7 @@ def qv2_4z(lmb_range=(64,8192), pretrained=False):
         cm.patch_upsample(dec_dims[0], dec_dims[1], rate=2),
         # 2x2
         *[res_block(dec_dims[1], kernel_size=5) for _ in range(2)],
-        qarv.VRLVBlockV2(dec_dims[1], z_dims[1], enc_key='enc_s32', enc_width=enc_dims[-3], kernel_size=5),
+        qarv.VRLVBlockV2(dec_dims[1], z_dims[1], enc_key='enc_s32', enc_width=enc_dims[-2], kernel_size=5),
         *[res_block(dec_dims[1], kernel_size=5) for _ in range(2)],
         cm.patch_upsample(dec_dims[1], dec_dims[2], rate=2),
         # 4x4
