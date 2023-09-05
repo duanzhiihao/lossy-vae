@@ -107,6 +107,54 @@ def sinusoidal_embedding(values: torch.Tensor, dim=256, max_period=64):
     return embedding
 
 
+class Permute(nn.Module):
+    def __init__(self, *dims: tuple):
+        """ Permute dimensions of a tensor
+        """
+        super().__init__()
+        self.dims = dims
+
+    def forward(self, x):
+        return torch.permute(x, dims=self.dims)
+
+
+class LayerScale(nn.Module):
+    def __init__(self, *shape, init_values=1e-5):
+        super().__init__()
+        self.gamma = nn.Parameter(init_values * torch.ones(*shape))
+
+    def forward(self, x):
+        return x * self.gamma
+
+
+class AdaptiveLayerNorm(nn.Module):
+    """ Channel-last LayerNorm with adaptive affine parameters that depend on the \
+        input embedding.
+    """
+    def __init__(self, dim: int, embed_dim: int):
+        super().__init__()
+        self.dim = dim
+        self.layer_norm = nn.LayerNorm(dim, eps=1e-6, elementwise_affine=False)
+        self.embedding_layer = nn.Sequential(
+            nn.GELU(),
+            nn.Linear(embed_dim, 2*dim),
+            # nn.Unflatten(dim=1, unflattened_size=(1, 1, 2*dim))
+        )
+        # TODO: initialize the affine parameters such that the initial transform is identity
+        # self.embedding_layer[1].weight.data.mul_(0.01)
+        # self.embedding_layer[1].bias.data.fill_(0.0)
+
+    def forward(self, x, emb):
+        # x: (B, ..., dim), emb: (B, embed_dim)
+        x = self.layer_norm(x)
+        scale, shift = self.embedding_layer(emb).chunk(2, dim=1) # (B, dim) x 2
+        # (B, dim) -> (B, ..., dim)
+        scale = torch.unflatten(scale, dim=1, sizes=[1] * (x.dim() - 2) + [self.dim])
+        shift = torch.unflatten(shift, dim=1, sizes=[1] * (x.dim() - 2) + [self.dim])
+        x = x * (1 + scale) + shift
+        return x
+
+
 class ConvNeXtBlockAdaLN(nn.Module):
     default_embedding_dim = 256
     def __init__(self, dim, embed_dim=None, out_dim=None, kernel_size=7, mlp_ratio=2,
@@ -160,3 +208,64 @@ class ConvNeXtBlockAdaLN(nn.Module):
             x = x + shortcut
         return x
 
+
+def scaled_dot_product_attention(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor):
+    """ A simple implementation of the scaled dot product attention.
+
+    Args:
+        q (torch.Tensor): query, shape (..., n1, c1)
+        k (torch.Tensor): key, shape (..., n2, c1)
+        v (torch.Tensor): value, shape (..., n2, c2)
+
+    Returns:
+        torch.Tensor: output, shape (..., n1, c2)
+    """
+    assert q.shape[:-2] == k.shape[:-2] == v.shape[:-2], f'{q.shape=}, {k.shape=}, {v.shape=}'
+    assert (q.shape[-1] == k.shape[-1]) and (k.shape[-2] == v.shape[-2])
+    # Batch, ..., N_tokens, C
+    attn = q @ k.transpose(-1, -2) / math.sqrt(q.shape[-1])
+    attn = torch.softmax(attn, dim=-1)
+    out = attn @ v
+    assert out.shape[-2:] == (q.shape[-2], v.shape[-1])
+    return out, attn
+
+
+class MultiheadAttention(nn.Module):
+    def __init__(self, in_dims: int, num_heads: int, attn_dim=None):
+        super().__init__()
+
+        if isinstance(in_dims, int):
+            q_in, k_in, v_in = in_dims, in_dims, in_dims
+        else:
+            assert len(in_dims) == 3, f'Invalid {in_dims=}'
+            q_in, k_in, v_in = in_dims
+
+        attn_dim = attn_dim or q_in
+        assert attn_dim % num_heads == 0, f"{num_heads=} must divide {attn_dim=}."
+
+        self.num_heads = num_heads
+        self.q_proj = nn.Linear(q_in, attn_dim)
+        self.k_proj = nn.Linear(k_in, attn_dim)
+        self.v_proj = nn.Linear(v_in, attn_dim)
+        self.out_proj = nn.Linear(attn_dim, q_in)
+
+    def split_heads(self, x: torch.Tensor):
+        return x.unflatten(-1, sizes=[self.num_heads, -1]).transpose(-2, -3)
+
+    def combine_heads(self, x):
+        return x.transpose(-2, -3).flatten(-2, -1) # (..., N, C)
+
+    def forward(self, q, k, v, return_attn=False):
+        assert q.shape[:-2] == k.shape[:-2] == v.shape[:-2], f'{q.shape=}, {k.shape=}, {v.shape=}'
+        # Input projections
+        q, k, v = self.q_proj(q), self.k_proj(k), self.v_proj(v)
+        # Separate into heads
+        q, k, v = self.split_heads(q), self.split_heads(k), self.split_heads(v)
+        # Attention
+        out, attn = scaled_dot_product_attention(q, k, v)
+        # Output
+        out = self.combine_heads(out) # (..., N, C)
+        out = self.out_proj(out)
+        if return_attn:
+            return out, attn
+        return out

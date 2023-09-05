@@ -16,15 +16,24 @@ import lvae.models.common as common
 import lvae.models.entropy_coding as entropy_coding
 
 
-class VRLVBlockV2(nn.Module):
+class LatentVariableBlock(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.discrete_gaussian = entropy_coding.DiscretizedGaussian()
+        self.requires_dict_input = True
+
+
+class VRLVBlockV2(LatentVariableBlock):
     """ Vriable-Rate Latent Variable Block
     """
     default_embedding_dim = 256
-    def __init__(self, width, zdim, enc_key, enc_width, embed_dim=None, kernel_size=7):
+    def __init__(self, width, zdim, enc_key, enc_width, embed_dim=None, kernel_size=7,
+                 name=None):
         super().__init__()
         self.in_channels  = width
         self.out_channels = width
         self.enc_key = enc_key
+        self.out_feature_name = name
 
         block = common.ConvNeXtBlockAdaLN
         embed_dim = embed_dim or self.default_embedding_dim
@@ -35,9 +44,6 @@ class VRLVBlockV2(nn.Module):
         self.posterior  = common.conv_k3s1(width, zdim)
         self.z_proj     = common.conv_k1s1(zdim, width)
         self.prior      = common.conv_k1s1(width, zdim*2)
-
-        self.discrete_gaussian = entropy_coding.DiscretizedGaussian()
-        self.is_latent_block = True
 
     def transform_prior(self, feature):
         """ prior p(z_i | z_<i)
@@ -71,14 +77,15 @@ class VRLVBlockV2(nn.Module):
         feature = feature + self.z_proj(z)
         return feature
 
-    def forward(self, fdict, mode='trainval'):
+    def forward(self, fdict):
         feature = fdict['feature']
         emb = fdict['lmb_emb']
+        mode = fdict['mode']
 
         pm, pv = self.transform_prior(feature)
 
         if mode == 'trainval': # training or validation
-            enc_feature = fdict['enc_features'][self.enc_key]
+            enc_feature = fdict['all_features'][self.enc_key]
             qm = self.transform_posterior(feature, enc_feature, emb)
             if self.training: # if training, use additive uniform noise
                 z = qm + torch.empty_like(qm).uniform_(-0.5, 0.5)
@@ -97,7 +104,7 @@ class VRLVBlockV2(nn.Module):
                 assert pm.shape == latent.shape
                 z = latent
         elif mode == 'compress': # encode z into bits
-            enc_feature = fdict['enc_features'][self.enc_key]
+            enc_feature = fdict['all_features'][self.enc_key]
             qm = self.transform_posterior(feature, enc_feature, emb)
             indexes = self.discrete_gaussian.build_indexes(pv)
             strings = self.discrete_gaussian.compress(qm, indexes, means=pm)
@@ -113,10 +120,54 @@ class VRLVBlockV2(nn.Module):
         feature = self.fuse_feature_and_z(feature, z)
         fdict['feature'] = feature
         fdict['zs'].append(z)
+        if self.out_feature_name is not None:
+            assert self.out_feature_name not in fdict['all_features']
+            fdict['all_features'][self.out_feature_name] = feature
         return fdict
 
     def update(self):
         self.discrete_gaussian.update()
+
+
+class CrossAttnTransformerNCHW(nn.Module):
+    default_embedding_dim = 256
+    def __init__(self, q_dim, kv_name, kv_dim, embed_dim=None):
+        super().__init__()
+        self.kv_name = kv_name
+
+        embed_dim = embed_dim or self.default_embedding_dim
+        # TODO: try standard nn.LayerNorm
+        self.norm1_q = common.AdaptiveLayerNorm(q_dim, embed_dim)
+        self.norm1_kv = common.AdaptiveLayerNorm(kv_dim, embed_dim)
+        self.cross_attn = common.MultiheadAttention([q_dim, kv_dim, kv_dim], num_heads=8)
+        self.layer_scale1 = nn.Parameter(torch.full(size=(1, 1, q_dim), fill_value=1e-5))
+
+        self.norm2 = common.AdaptiveLayerNorm(q_dim, embed_dim)
+        self.mlp = nn.Sequential(
+            nn.Linear(q_dim, q_dim*2),
+            nn.GELU(),
+            nn.Linear(q_dim*2, q_dim),
+        )
+        self.layer_scale2 = nn.Parameter(torch.full(size=(1, 1, q_dim), fill_value=1e-5))
+
+        self.requires_dict_input = True
+
+    def forward(self, fdict):
+        x = fdict['feature'] # (B, C, H, W)
+        B, C, H, W = x.shape
+        kv = fdict['all_features'][self.kv_name] # (B, C, H, W)
+        # to (B, H*W, C)
+        x = x.flatten(2).transpose(1, 2) # (B, H*W, C)
+        kv = kv.flatten(2).transpose(1, 2) # (B, H*W, C)
+        emb = fdict['lmb_emb'] # (B, C)
+
+        kv = self.norm1_kv(kv, emb)
+        x = x + self.layer_scale1 * self.cross_attn(self.norm1_q(x, emb), kv, kv)
+        x = x + self.layer_scale2 * self.mlp(self.norm2(x, emb))
+         # (B, H*W, C) -> (B, C, H, W)
+        x = x.transpose(1, 2).unflatten(2, sizes=[H, W])
+        fdict['feature'] = x
+        return fdict
 
 
 class VariableRateLossyVAE(nn.Module):
@@ -137,7 +188,7 @@ class VariableRateLossyVAE(nn.Module):
 
         self.register_buffer('_dummy', torch.zeros(1), persistent=False)
         self._dummy: torch.Tensor
-        self.num_latents = len([b for b in self.dec_blocks if getattr(b, 'is_latent_block', False)])
+        self.num_latents = len([b for b in self.dec_blocks if isinstance(b, LatentVariableBlock)])
         self.max_stride = config['max_stride']
         self.compressing = False
         self._logging_images = config.get('log_images', [])
@@ -193,8 +244,7 @@ class VariableRateLossyVAE(nn.Module):
         fdict = dict() # a feature dictionary containing all features
         fdict['lmb_emb'] = self.get_lmb_embedding(lmb) # lambda embedding
         # ======== for 'trainval' mode ========
-        fdict['enc_features'] = None # bottom-up encoder features
-        fdict['dec_features'] = OrderedDict() # top-down decoder features
+        fdict['all_features'] = OrderedDict() # bottom-up encoder features
         nB, nH, nW = bias_bhw
         fdict['feature'] = self.dec_bias.expand(nB, -1, nH, nW) # main feature for the top-down path
         fdict['kl_divs'] = [] # kl (i.e., rate) for each latent variable
@@ -209,13 +259,14 @@ class VariableRateLossyVAE(nn.Module):
         bias_bhw = (im.shape[0], im.shape[2]//self.max_stride, im.shape[3]//self.max_stride)
         fdict = self.get_initial_fdict(lmb, bias_bhw)
         x = self.preprocess(im)
-        fdict['enc_features'] = self.encoder(x, fdict['lmb_emb'])
+        fdict['all_features'] = self.encoder(x, fdict['lmb_emb'])
         return fdict, x
 
     def forward_topdown(self, fdict, mode='trainval'):
+        fdict['mode'] = mode
         for i, block in enumerate(self.dec_blocks):
-            if getattr(block, 'is_latent_block', False):
-                fdict = block(fdict, mode=mode)
+            if getattr(block, 'requires_dict_input', False):
+                fdict = block(fdict)
             elif getattr(block, 'requires_embedding', False):
                 fdict['feature'] = block(fdict['feature'], fdict['lmb_emb'])
             elif isinstance(block, common.CompresionStopFlag) and (mode == 'compress'):
