@@ -395,7 +395,7 @@ def qv2_4z_lowz(lmb_range=(64,8192), pretrained=False):
     ]
 
     dec_dims = [ch*2, ch*2, ch*3, ch*2, ch*1]
-    z_dims = [64, 128, 256, 32]
+    z_dims = [128, 128, 256, 64]
     cfg['dec_blocks'] = [
         # 1x1
         qarv.VRLVBlockV2(dec_dims[0], z_dims[0], enc_key='enc_s64', enc_width=enc_dims[-1], kernel_size=3),
