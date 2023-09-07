@@ -38,8 +38,8 @@ def parse_args():
     parser.add_argument('--accum_num',  type=int,  default=1)
     parser.add_argument('--optimizer',  type=str,  default='adam')
     parser.add_argument('--lr',         type=float,default=2e-4)
-    parser.add_argument('--lr_sched',   type=str,  default='const-0.5-cos')
-    parser.add_argument('--lrf_min',    type=float,default=0.01)
+    parser.add_argument('--lr_sched',   type=str,  default='constant')
+    parser.add_argument('--lrf_min',    type=float,default=0.1)
     parser.add_argument('--lr_warmup',  type=int,  default=0)
     parser.add_argument('--grad_clip',  type=float,default=2.0)
     # training setting
