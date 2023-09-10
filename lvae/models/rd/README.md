@@ -1,14 +1,14 @@
 # An Improved Upper Bound on the Rate-Distortion Function of Images
 
-VAEs can be used to upper-bound the **information rate-distortion function**, R(D), of random variables.
+VAEs can be used to upper-bound the information rate-distortion function, R(D), of random variables.
 We develop a model based on the ResNet VAE architecture and use it to upper-bound the R(D) of images.
 The resulting upper bound shows that more than 30% BD-rate reduction w.r.t. VTM 18.0 is theoretically achievable.
-This means that existing codecs are far from optimum.
+This means that existing codecs are still far from optimum.
 
-**Paper:** TBD \
-**Arxiv:** TBD
+**Paper:** An Improved Upper Bound on the Rate-Distortion Function of Images, ICIP 2023 \
+**Arxiv:** https://arxiv.org/abs/2309.02574
 
-### Note: an upper bound for R(D), measured by bpp-MSE, is a *lower bound* in the PSNR-bpp representation.
+Note: An upper bound for R(D), measured by bpp-MSE, can be considered a lower bound for R(D) in the PSNR-bpp representation.
 
 
 ## Features
