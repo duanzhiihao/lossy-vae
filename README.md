@@ -19,7 +19,7 @@ This project is under active development.
     - Technical report
     - Abstract: improved version of the previous model. **Variable-rate, faster decoding, better performance.**
     - \[Code & pre-trained models\]: [lossy-vae/lvae/models/qarv](lvae/models/qarv)
-- **An Improved Upper Bound on the Rate-Distortion Function of Images**
+- **An Improved Upper Bound on the Rate-Distortion Function of Images** [[arxiv](https://arxiv.org/abs/2309.02574)]
     - Published at ICIP 2023
     - Abstract: a 15-layer VAE model used to estimate the information R(D) function. This model proves that -30% BD-rate w.r.t. VTM is theoretically achievable.
     - \[Code & pre-trained models\]: [lossy-vae/lvae/models/rd](lvae/models/rd)
