@@ -100,7 +100,7 @@ im = model.decompress_file('/path/to/compressed.bits')
 ```
 
 
-### Training and evaluation - datasets
+### Datasets
 **COCO**
 1. Download the COCO dataset "2017 Train images [118K/18GB]" from https://cocodataset.org/#download
 2. Unzip the images anywhere, e.g., at `/path/to/datasets/coco/train2017`
@@ -124,7 +124,7 @@ Then, edit `lossy-vae/lvae/paths.py` such that `known_datasets['kodak'] = '/path
 2. Edit `lossy-vae/lvae/paths.py` such that `known_datasets['custom-name'] = '/path/to/my-dataset'`, where `custom-name` is the name of your dataset, and `/path/to/my-dataset` is the path to the folder containing images.
 3. Then, you can use `custom-name` as the dataset name in the training/evaluation scripts.
 
-### Training and evaluation - scripts
+### Training and evaluation scripts
 Training and evaluation scripts vary from model to model. For example, `qres34m` uses fixed-rate train/eval scheme, while `qarv_base` uses variable-rate train/eval scheme. \
 Detailed training/evaluation instructions are provided in each model's subfolder (see the section [Models](#models)).
 
