@@ -11,13 +11,13 @@ This project is under active development.
 
 ## Models
 ### Implemented Methods (Pre-Trained Models Available)
-- **Lossy Image Compression with Quantized Hierarchical VAEs** [[arXiv](https://arxiv.org/abs/2208.13056)]
+- **Lossy Image Compression with Quantized Hierarchical VAEs** [[arxiv](https://arxiv.org/abs/2208.13056)]
     - Published at WACV 2023,[ ***Best Algorithms Paper Award***](https://wacv2023.thecvf.com/node/174)
     - Abstract: a 12-layer VAE model named QRes-VAE. Good compression performance.
     - \[Code & pre-trained models\]: [lossy-vae/lvae/models/qres](lvae/models/qresvae)
-- **QARV: Quantization-Aware ResNet VAE for Lossy Image Compression** [[arXiv](https://arxiv.org/abs/2302.08899)]
-    - Technical report
-    - Abstract: improved version of the previous model. **Variable-rate, faster decoding, better performance.**
+- **QARV: Quantization-Aware ResNet VAE for Lossy Image Compression** [[arxiv](https://arxiv.org/abs/2302.08899)] [[ieee](https://ieeexplore.ieee.org/document/10274142)]
+    - Published at TPAMI 2023
+    - Abstract: an improved version of the previous model; **Variable-rate, faster decoding, better performance.**
     - \[Code & pre-trained models\]: [lossy-vae/lvae/models/qarv](lvae/models/qarv)
 - **An Improved Upper Bound on the Rate-Distortion Function of Images** [[arxiv](https://arxiv.org/abs/2309.02574)]
     - Published at ICIP 2023
