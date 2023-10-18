@@ -1,7 +1,7 @@
 # QARV: Quantization-Aware ResNet VAE for Lossy Image Compression
 
 QARV (Quantization-Aware ResNet VAE) is an improved version of QRes-VAE.
-- **Technical report**
+- **QARV: Quantization-Aware ResNet VAE for Lossy Image Compression, TPAMI 2023**
 - **Arxiv:** https://arxiv.org/abs/2302.08899
 
 
