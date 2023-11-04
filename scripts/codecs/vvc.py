@@ -163,6 +163,7 @@ def decode_to_yuv_file(bits_path, output_path=None):
         get_dec_path(),
         f'--BitstreamFile={bits_path.resolve()}',
         f'--ReconFile={Path(output_path).resolve()}',
+        f'--OutputBitDepth=8',
     ]
     msg, cmd = run_command(cmd)
     return msg, output_path

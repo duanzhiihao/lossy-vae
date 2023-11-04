@@ -33,7 +33,7 @@ def evaluate_one_image(img_path: Path, q: int, result_path: Path):
 
     # compress to file and compute bpp
     tmp_bits_path = get_temp_file_path(suffix='.bits')
-    _, cmd = vvc.encode_numpy_rgb(im, output_path=tmp_bits_path, quality=q)
+    _, cmd = vvc.encode_numpy_rgb(im, output_path=tmp_bits_path, qp=q)
     num_bits = Path(tmp_bits_path).stat().st_size * 8
 
     # decompression, and remove bits file
