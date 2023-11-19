@@ -14,7 +14,7 @@ def _to_float32(*args):
         return tuple([t.to(dtype=torch.float) for t in args])
 
 
-@torch.autocast('cuda', enabled=False) # disable mixed precision
+# @torch.autocast('cuda', enabled=False) # disable mixed precision
 def _safe_log_prob_mass(distribution, x, bin_size, prob_clamp):
     prob_mass = distribution.cdf(x + 0.5*bin_size) - distribution.cdf(x - 0.5*bin_size)
     log_prob = torch.where(
