@@ -282,7 +282,10 @@ class VariableRateLossyVAE(nn.Module):
         B, imC, imH, imW = im.shape # batch, channel, height, width
 
         # ================ Forward pass ================
-        lmb = lmb or self.sample_lmb(n=im.shape[0])
+        if self.training: # sample lambda for training
+            lmb = self.sample_lmb(n=im.shape[0])
+        else: # use the default lambda for evaluation
+            lmb = torch.full((B,), self.default_lmb, device=self._dummy.device)
         assert lmb.shape == (B,)
         fdict, x = self.forward_bottomup(im, lmb)
         fdict = self.forward_topdown(fdict, mode='trainval')
@@ -313,6 +316,7 @@ class VariableRateLossyVAE(nn.Module):
 
     @torch.inference_mode()
     def _self_evaluate(self, img_paths, lmb, pbar=False, log_dir=None):
+        raise DeprecationWarning()
         lmb = torch.full((1,), lmb, device=self._dummy.device)
         pbar = tqdm(img_paths) if pbar else img_paths
         avg_meters = defaultdict(AverageMeter)
@@ -327,6 +331,7 @@ class VariableRateLossyVAE(nn.Module):
 
     @torch.inference_mode()
     def self_evaluate(self, img_dir, lmb_range=None, steps=8, log_dir=None):
+        raise DeprecationWarning()
         img_paths = list(Path(img_dir).rglob('*.*'))
         start, end = self.lmb_range if (lmb_range is None) else lmb_range
         # uniform in cube root space
