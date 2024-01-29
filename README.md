@@ -11,7 +11,7 @@ This project is under active development.
 
 ## Models
 ### Implemented Methods (Pre-Trained Models Available)
-- **Lossy Image Compression with Quantized Hierarchical VAEs** [[arxiv](https://arxiv.org/abs/2208.13056)]
+- **Lossy Image Compression with Quantized Hierarchical VAEs** [[arxiv](https://arxiv.org/abs/2208.13056)] [[cvf](https://openaccess.thecvf.com/content/WACV2023/html/Duan_Lossy_Image_Compression_With_Quantized_Hierarchical_VAEs_WACV_2023_paper.html)] [[ieee](https://ieeexplore.ieee.org/document/10030851)]
     - Published at WACV 2023,[ ***Best Algorithms Paper Award***](https://wacv2023.thecvf.com/node/174)
     - Abstract: a 12-layer VAE model named QRes-VAE. Good compression performance.
     - \[Code & pre-trained models\]: [lossy-vae/lvae/models/qres](lvae/models/qresvae)
@@ -19,7 +19,7 @@ This project is under active development.
     - Published at TPAMI 2023
     - Abstract: an improved version of the previous model; **Variable-rate, faster decoding, better performance.**
     - \[Code & pre-trained models\]: [lossy-vae/lvae/models/qarv](lvae/models/qarv)
-- **An Improved Upper Bound on the Rate-Distortion Function of Images** [[arxiv](https://arxiv.org/abs/2309.02574)]
+- **An Improved Upper Bound on the Rate-Distortion Function of Images** [[arxiv](https://arxiv.org/abs/2309.02574)] [[ieee](https://ieeexplore.ieee.org/document/10222199)]
     - Published at ICIP 2023
     - Abstract: a 15-layer VAE model used to estimate the information R(D) function. This model proves that -30% BD-rate w.r.t. VTM is theoretically achievable.
     - \[Code & pre-trained models\]: [lossy-vae/lvae/models/rd](lvae/models/rd)
