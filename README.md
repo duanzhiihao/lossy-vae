@@ -1,7 +1,6 @@
 # Lossy Image Compression using Hierarchical VAEs
 
-This repository contains authors' implementation of several deep learning-based methods related to lossy image compression. \
-This project is under active development.
+This repository contains the authors' implementation of several deep learning-based methods related to lossy image compression. \
 
 - [Models](#models)
 - [Results](#results)
@@ -17,7 +16,7 @@ This project is under active development.
     - \[Code & pre-trained models\]: [lossy-vae/lvae/models/qres](lvae/models/qresvae)
 - **QARV: Quantization-Aware ResNet VAE for Lossy Image Compression** [[arxiv](https://arxiv.org/abs/2302.08899)] [[ieee](https://ieeexplore.ieee.org/document/10274142)]
     - Published at TPAMI 2023
-    - Abstract: an improved version of the previous model; **Variable-rate, faster decoding, better performance.**
+    - Abstract: an improved version of the previous model; **Variable rate, faster decoding, better performance.**
     - \[Code & pre-trained models\]: [lossy-vae/lvae/models/qarv](lvae/models/qarv)
 - **An Improved Upper Bound on the Rate-Distortion Function of Images** [[arxiv](https://arxiv.org/abs/2309.02574)] [[ieee](https://ieeexplore.ieee.org/document/10222199)]
     - Published at ICIP 2023
