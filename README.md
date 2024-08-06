@@ -1,6 +1,6 @@
 # Lossy Image Compression using Hierarchical VAEs
 
-This repository contains the authors' implementation of several deep learning-based methods related to lossy image compression. \
+This repository contains the authors' implementation of several deep learning-based methods related to lossy image compression.
 
 - [Models](#models)
 - [Results](#results)
@@ -39,7 +39,7 @@ This repository contains the authors' implementation of several deep learning-ba
 - CLIC 2022 test set: [lossy-vae/results/clic2022-test](results/clic2022-test)
 
 Notes on metric computation:
-- Bpp and PSNR are first compute for each image and then averaged over all images in a dataset.
+- Bpp and PSNR are first computed for each image and then averaged over all images in a dataset.
 - Bpp is the saved file size (in bits) divided by # of image pixels.
 - PSNR is computed in RGB space (not YUV).
 
