@@ -196,7 +196,6 @@ class VariableRateLossyVAE(nn.Module):
         self.compressing = False
         # self._stats_log = dict()
         self._logging_images = config.get('log_images', [])
-        self._flops_mode = False
 
     def _setup_lmb_embedding(self, config):
         _low, _high = config['lmb_range']
@@ -240,20 +239,6 @@ class VariableRateLossyVAE(nn.Module):
         assert (im.dim() == 4) and (0 <= im.min() <= im.max() <= 1) and not im.requires_grad
         x = im.clone().add_(-0.5).mul_(2.0)
         return x
-
-    @torch.no_grad()
-    def _forward_flops(self, im, lmb):
-        im = im.uniform_(0, 1)
-        if self._flops_mode == 'compress':
-            compressed_obj = self.compress(im)
-        elif self._flops_mode == 'decompress':
-            n, h, w = im.shape[0], im.shape[2]//self.max_stride, im.shape[3]//self.max_stride
-            samples = self.unconditional_sample(bhw_repeat=(n,h,w))
-        elif self._flops_mode == 'end-to-end':
-            x_hat, stats_all = self.forward_end2end(im, lmb=lmb)
-        else:
-            raise ValueError(f'Unknown self._flops_mode: {self._flops_mode}')
-        return
 
     def sample_lmb(self, n):
         low, high = self.lmb_range # original lmb space, 16 to 1024
@@ -314,18 +299,8 @@ class VariableRateLossyVAE(nn.Module):
                 feature = block(feature)
         return feature, lv_block_results
 
-    def forward(self, batch, lmb=None, return_rec=False):
-        if isinstance(batch, (tuple, list)):
-            im, label = batch
-        else:
-            im = batch
-        im = im.to(self._dummy.device)
+    def forward(self, im, lmb=None, return_rec=False):
         nB, imC, imH, imW = im.shape # batch, channel, height, width
-
-        # ================ computing flops ================
-        if self._flops_mode:
-            lmb = self.sample_lmb(n=im.shape[0])
-            return self._forward_flops(im, lmb)
 
         # ================ Forward pass ================
         if (lmb is None): # training
