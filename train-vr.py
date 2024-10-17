@@ -151,11 +151,10 @@ def evaluate_and_log(model, val_img_dir, log_dir, wbrun, step):
     model = unwrap_model(model).eval()
 
     results = model.self_evaluate(val_img_dir, log_dir=log_dir, steps=6)
-    results_to_log = process_log_results(results)
+    log_dict = process_log_results(results)
 
     # wandb log
-    log_dict = {"general/iter": step}
-    log_dict.update({f'val-metrics/{k}': v for k,v in results_to_log.items()})
+    log_dict.update({"general/iter": step})
     wbrun.log(log_dict, step=step)
 
 
@@ -164,8 +163,8 @@ def process_log_results(results):
     bdr = mycv.utils.bd_rate(anchor['bpp'], anchor['psnr'], results['bpp'], results['psnr'])
 
     lambdas = results['lambda']
-    results_to_log = {'bd-rate': bdr}
-    for idx in [0, len(lambdas)//2, -1]:
+    results_to_log = {'val-bd-rate/kodak-vtm18.0': bdr}
+    for idx in range(len(lambdas)):
         lmb = round(lambdas[idx])
         results_to_log.update({
             f'lmb{lmb}/loss': results['loss'][idx],
