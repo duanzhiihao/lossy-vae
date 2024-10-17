@@ -151,19 +151,16 @@ def evaluate_and_log(model, val_img_dir, log_dir, wbrun, step):
     model = unwrap_model(model).eval()
 
     results = model.self_evaluate(val_img_dir, log_dir=log_dir, steps=6)
-    log_dict = process_log_results(results)
+    print_json_like(results)
 
-    # wandb log
-    log_dict.update({"general/iter": step})
-    wbrun.log(log_dict, step=step)
+    results_to_log = OrderedDict({"general/iter": step})
 
-
-def process_log_results(results):
-    anchor = _read_json("results/kodak/kodak-vtm18.0.json")
-    bdr = mycv.utils.bd_rate(anchor['bpp'], anchor['psnr'], results['bpp'], results['psnr'])
+    if step > 1000:
+        anchor = _read_json("results/kodak/kodak-vtm18.0.json")
+        bdr = mycv.utils.bd_rate(anchor['bpp'], anchor['psnr'], results['bpp'], results['psnr'])
+        results_to_log['val-bd-rate/kodak-vtm18.0'] = bdr
 
     lambdas = results['lambda']
-    results_to_log = {'val-bd-rate/kodak-vtm18.0': bdr}
     for idx in range(len(lambdas)):
         lmb = round(lambdas[idx])
         results_to_log.update({
@@ -171,10 +168,10 @@ def process_log_results(results):
             f'lmb{lmb}/bpp':  results['bpp'][idx],
             f'lmb{lmb}/psnr': results['psnr'][idx],
         })
-    results['loss'] = bdr
-    results['bd-rate'] = bdr
-    print_json_like(results)
-    return results_to_log
+
+    # wandb log
+    wbrun.log(results_to_log, step=step)
+
 
 def _read_json(fpath):
     with open(fpath, mode="r") as f:
