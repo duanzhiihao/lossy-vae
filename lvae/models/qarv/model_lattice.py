@@ -17,6 +17,7 @@ import lvae.models.entropy_coding as entropy_coding
 from lvae.models.registry import register_model
 
 from laic.models.lattice_priors import NeuralCovPriorV2
+from laic.models.common import bounded_sigmoid
 
 
 url_root = 'https://huggingface.co/duanzh0/my-model-weights/resolve/main'
@@ -31,6 +32,7 @@ class VRLVBlockBase(nn.Module):
         self.in_channels  = width
         self.out_channels = width
         self.enc_key = enc_key
+        self.zdim = zdim
 
         block = common.ConvNeXtBlockAdaLN
         embed_dim = embed_dim or self.default_embedding_dim
@@ -42,7 +44,7 @@ class VRLVBlockBase(nn.Module):
         self.post_merge = common.conv_k1s1(width + enc_width, width)
         self.posterior  = common.conv_k3s1(width, zdim)
         self.z_proj     = common.conv_k1s1(zdim, width)
-        self.prior      = common.conv_k1s1(width, zdim*2)
+        self.prior      = common.conv_k1s1(width, zdim*2 + zdim // 2)
 
         self.discrete_gaussian = entropy_coding.DiscretizedGaussian()
         self.is_latent_block = True
@@ -54,10 +56,10 @@ class VRLVBlockBase(nn.Module):
             feature (torch.Tensor): feature map
         """
         feature = self.resnet_front(feature, lmb_embedding)
-        pm, plogv = self.prior(feature).chunk(2, dim=1)
-        plogv = tnf.softplus(plogv + 2.3) - 2.3 # make logscale > -2.3
-        pv = torch.exp(plogv)
-        return feature, pm, pv
+        pm, stds, cc = self.prior(feature).split([self.zdim, self.zdim, self.zdim//2], dim=1)
+        stds = bounded_sigmoid(stds, low=0.1, high=10.0)
+        cc = tnf.tanh(cc) * 0.8
+        return feature, pm, stds, cc
 
     def transform_posterior(self, feature, enc_feature, lmb_embedding):
         """ posterior q(z_i | z_<i, x)
@@ -88,16 +90,18 @@ class VRLVBlockBase(nn.Module):
             feature     (torch.Tensor): feature map
             enc_feature (torch.Tensor): feature map
         """
+        feature, pm, stds, cc = self.transform_prior(feature, lmb_embedding)
         raise NotImplementedError()
-        feature, pm, pv = self.transform_prior(feature, lmb_embedding)
 
         additional = dict() # used to pack all returned values
         if mode == 'trainval': # training or validation
             qm = self.transform_posterior(feature, enc_feature, lmb_embedding)
+            qm = qm - pm
+
             if self.training: # if training, use additive uniform noise
                 z = qm + torch.empty_like(qm).uniform_(-0.5, 0.5)
-                log_prob = entropy_coding.gaussian_log_prob_mass(pm, pv, x=z, bin_size=1.0, prob_clamp=1e-6)
-                kl = -1.0 * log_prob
+                z_hat, nbits = prior_model(z, params=pv)
+                # kl = -1.0 * log_prob
             else: # if evaluation, use residual quantization
                 z, probs = self.discrete_gaussian(qm, scales=pv, means=pm)
                 kl = -1.0 * torch.log(probs)
@@ -121,6 +125,7 @@ class VRLVBlockBase(nn.Module):
         else:
             raise ValueError(f'Unknown mode={mode}')
 
+        z = z + pm
         feature = self.fuse_feature_and_z(feature, z)
         feature = self.resnet_end(feature, lmb_embedding)
         if get_latent:
